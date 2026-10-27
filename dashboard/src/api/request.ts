@@ -151,12 +151,16 @@ function isSetupApiPath(path: string): boolean {
  * Skip the network when this tab already knows setup lockdown is on.
  * Avoids stampeding ``/api/agents`` etc. after the first 503 / status probe.
  */
-function isDesktopLoginPath(path: string): boolean {
-  return path === "/auth/oauth/status" || path === "/auth/mammoth/desktop-login";
+function isDesktopAuthPath(path: string): boolean {
+  return (
+    path === "/auth/oauth/status" ||
+    path === "/auth/mammoth/desktop-login" ||
+    path === "/auth/mammoth/desktop-register"
+  );
 }
 
 function assertNotSetupLocked(path: string): void {
-  if (_setupRequiredKnown && !isSetupApiPath(path) && !isDesktopLoginPath(path)) {
+  if (_setupRequiredKnown && !isSetupApiPath(path) && !isDesktopAuthPath(path)) {
     handleSetupRequired();
     throw new SetupRequiredError();
   }

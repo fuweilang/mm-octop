@@ -27,6 +27,22 @@ function errorText(error: unknown, registering: boolean): string {
   if (text.includes("unreachable") || text.includes("Request failed: 502")) {
     return "登录服务没有响应，请稍后再试";
   }
+  // Cloud Octop rejects desktop-login/register (loopback-only).
+  if (text.includes("Request failed: 403") || text.includes('"error":"exchange"')) {
+    return registering
+      ? "请在本机客户端注册，不要从云端页面提交"
+      : "请在本机客户端登录，不要从云端页面提交";
+  }
+  if (text.includes("Setup required") || text.includes("setup_required")) {
+    return "客户端还在初始化，请稍后再试";
+  }
+  if (
+    text.includes("Failed to fetch") ||
+    text.includes("NetworkError") ||
+    text.includes("Load failed")
+  ) {
+    return "连不上本机服务，请重启客户端后再试";
+  }
   return registering ? "注册没有完成，请重试" : "登录没有完成，请重试";
 }
 

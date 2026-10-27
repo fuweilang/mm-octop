@@ -197,11 +197,14 @@ export function consumeSkipOidc() {
   return skip;
 }
 
+/** Best-effort 中台 Cookie clear. Local WebView is cross-origin, so this may no-op; Octop JWT is cleared separately. */
 export async function logoutMammothIdp() {
   const origin = await ensurePlatformOrigin();
+  // Same-origin (dev gateway) can clear Cookie. Desktop → www.mmai.vip is cross-site.
   await fetch(platformUrl("/console/api/auth/logout", origin), {
     method: "POST",
     credentials: "include",
+    mode: "cors",
   }).catch(() => undefined);
   localStorage.removeItem("mammothai_is_login");
   localStorage.removeItem("mammothai_current_user");
