@@ -19,7 +19,7 @@ export default function CurrentVersionBadge({
   const { status } = useUpdateStatus();
 
   if (!status?.current_version) return null;
-  const version = "1.0.1";
+  const version = status.current_version;
 
   const canUpdate = userCan(user, "update");
   const tooltip = canUpdate
