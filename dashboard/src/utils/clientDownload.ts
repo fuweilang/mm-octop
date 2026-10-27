@@ -22,5 +22,6 @@ export function detectClientPlatform(): ClientPlatform {
 }
 
 export function clientDownloadUrl(platform?: ClientPlatform) {
-  return CLIENT_FILES[platform ?? detectClientPlatform()];
+  const path = CLIENT_FILES[platform ?? detectClientPlatform()];
+  return `${path}?v=${Date.now()}`;
 }
