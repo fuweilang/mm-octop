@@ -43,8 +43,8 @@ desktop_pkg_basename() {
   ver="$(octop_version)"
   case "$plat" in
     darwin-*) echo "猛犸智能体-desktop-${plat}-${ver}.dmg" ;;
-    windows-*) echo "Octop-desktop-${plat}-${ver}.exe" ;;
-    linux-*) echo "Octop-desktop-${plat}-${ver}.tar.gz" ;;
+    windows-*) echo "猛犸智能体-desktop-${plat}-${ver}.exe" ;;
+    linux-*) echo "猛犸智能体-desktop-${plat}-${ver}.tar.gz" ;;
     *)
       echo "unknown platform: ${plat}" >&2
       return 1

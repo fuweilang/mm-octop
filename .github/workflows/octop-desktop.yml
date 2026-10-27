@@ -304,7 +304,7 @@ jobs:
       - name: Upload bundled desktop package
         uses: actions/upload-artifact@v7
         with:
-          path: desktop/src/bin/Octop-desktop-${{ matrix.plat }}-${{ env.OCTOP_VERSION }}.*
+          path: desktop/src/bin/猛犸智能体-desktop-${{ matrix.plat }}-${{ env.OCTOP_VERSION }}.*
           archive: false
           if-no-files-found: error
           retention-days: 14
@@ -354,7 +354,17 @@ jobs:
       # zips into directories, so files: release-assets/* would skip them.
       - uses: actions/download-artifact@v8
         with:
-          pattern: Octop-*
+          pattern: "*-desktop-*"
+          path: release-assets
+          merge-multiple: true
+          skip-decompress: true
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.inputs.attach_from_run || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: "Octop-portable-*"
           path: release-assets
           merge-multiple: true
           skip-decompress: true
@@ -390,7 +400,7 @@ jobs:
     uses: ./.github/workflows/upload-release-cos.yml
     with:
       tag: ${{ needs.release.outputs.tag }}
-      patterns: "Octop-desktop-*,Octop-portable-*"
+      patterns: "*desktop-*,Octop-portable-*"
     secrets:
       RELEASE_COS_SECRET_ID: ${{ secrets.RELEASE_COS_SECRET_ID }}
       RELEASE_COS_SECRET_KEY: ${{ secrets.RELEASE_COS_SECRET_KEY }}
