@@ -168,3 +168,52 @@ func (a *App) installExternalLinks() {
 	}
 	a.window.ExecJS(injectExternalLinksJS())
 }
+
+
+func injectLocalHomeGuardJS(localHome string) string {
+	home := strings.TrimSpace(localHome)
+	if home == "" {
+		return ""
+	}
+	escaped := strings.ReplaceAll(home, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	return `(function(){
+	var home = "` + escaped + `";
+	if (!home) return;
+	if (window.__OCTOP_LOCAL_HOME_GUARD__) return;
+	window.__OCTOP_LOCAL_HOME_GUARD__ = true;
+	function isLocalHost(host) {
+		return host === "127.0.0.1" || host === "localhost" || host === "[::1]";
+	}
+	function isIdpPath(path) {
+		return path === "/login" || path.indexOf("/login?") === 0 ||
+			path.indexOf("/console/") === 0 || path.indexOf("/middle/") === 0 ||
+			path.indexOf("/api/oidc") === 0 || path.indexOf("/console/api/oidc") === 0 ||
+			path.indexOf("/middle/api/oidc") === 0;
+	}
+	function bounceIfCloudAgent() {
+		try {
+			var loc = window.location;
+			if (isLocalHost(loc.hostname)) return;
+			var path = loc.pathname || "";
+			if (isIdpPath(path)) return;
+			if (path === "/agent" || path.indexOf("/agent/") === 0) {
+				window.location.replace(home.replace(/\/?$/, "/") + "agent/chat");
+			}
+		} catch (e) {}
+	}
+	bounceIfCloudAgent();
+	setInterval(bounceIfCloudAgent, 800);
+})();`
+}
+
+func (a *App) installLocalHomeGuard() {
+	if a.window == nil || strings.TrimSpace(a.dashboardURL) == "" {
+		return
+	}
+	js := injectLocalHomeGuardJS(a.dashboardURL)
+	if js == "" {
+		return
+	}
+	a.window.ExecJS(js)
+}

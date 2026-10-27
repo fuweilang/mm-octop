@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,7 @@ type App struct {
 	cmd            *exec.Cmd
 	mu             sync.Mutex
 	quitting       bool
+	dashboardURL   string
 
 	trayClickMu    sync.Mutex
 	lastTrayClick  time.Time
@@ -240,8 +242,10 @@ func (a *App) showDashboard(base string) {
 	if a.window == nil {
 		return
 	}
+	a.dashboardURL = strings.TrimRight(base, "/") + "/"
 	a.window.SetURL(base)
 	a.scheduleDragOverlay()
+	a.installLocalHomeGuard()
 	s := a.store.get()
 	go func() {
 		time.Sleep(800 * time.Millisecond)
@@ -315,6 +319,7 @@ func (a *App) scheduleDragOverlay() {
 			time.Sleep(250 * time.Millisecond)
 			a.installDragOverlay()
 			a.installExternalLinks()
+			a.installLocalHomeGuard()
 		}
 	}()
 }

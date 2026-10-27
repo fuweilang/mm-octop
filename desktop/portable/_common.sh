@@ -42,7 +42,7 @@ desktop_pkg_basename() {
   local ver
   ver="$(octop_version)"
   case "$plat" in
-    darwin-*) echo "Octop-desktop-${plat}-${ver}.dmg" ;;
+    darwin-*) echo "猛犸智能体-desktop-${plat}-${ver}.dmg" ;;
     windows-*) echo "Octop-desktop-${plat}-${ver}.exe" ;;
     linux-*) echo "Octop-desktop-${plat}-${ver}.tar.gz" ;;
     *)
