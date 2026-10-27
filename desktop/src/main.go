@@ -181,7 +181,8 @@ func (a *App) boot() {
 		return
 	}
 	a.setStatus(desktopText(locale, copyStatusCheckingRuntime))
-	if err := ensurePortable(locale, a.setStatus); err != nil {
+	replaced, err := ensurePortable(locale, a.setStatus)
+	if err != nil {
 		a.setStatus(err.Error())
 		return
 	}
@@ -191,7 +192,14 @@ func (a *App) boot() {
 	a.cmd = nil
 	a.mu.Unlock()
 	host, preferred := resolveListen()
-	if existing := findRunningDashboard(host, preferred); existing != "" {
+	if replaced {
+		// Runtime files on disk just changed; never attach to a stale process
+		// that still serves the previous code from memory.
+		if saved, ok := readDesktopPort(); ok {
+			stopListeningOctop(host, saved)
+		}
+		stopListeningOctop(host, preferred)
+	} else if existing := findRunningDashboard(host, preferred); existing != "" {
 		a.setStatus(desktopText(locale, copyStatusUsingExisting))
 		if err := waitHealth(locale, existing, 30*time.Second); err != nil {
 			a.setStatus(err.Error())

@@ -28,7 +28,7 @@ func TestEnsurePortableUsesEmbeddedPackage(t *testing.T) {
 	embeddedPortable = data
 	t.Cleanup(func() { embeddedPortable = prev })
 
-	if err := ensurePortable(LocaleZH, func(string) {}); err != nil {
+	if _, err := ensurePortable(LocaleZH, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 	if !launchReady(portableDir()) {
@@ -45,7 +45,7 @@ func TestEnsurePortableUsesBundledPackage(t *testing.T) {
 	writeTestGreenZip(t, zipPath, "1.0.0")
 
 	var statuses []string
-	err := ensurePortable(LocaleZH, func(status string) {
+	_, err := ensurePortable(LocaleZH, func(status string) {
 		statuses = append(statuses, status)
 	})
 	if err != nil {
@@ -81,7 +81,7 @@ func TestEnsurePortableReplacesOlderRuntime(t *testing.T) {
 	writeTestGreenZip(t, newZip, "0.9.32")
 	t.Setenv("OCTOP_DESKTOP_PORTABLE_ZIP", newZip)
 	var statuses []string
-	if err := ensurePortable(LocaleZH, func(status string) { statuses = append(statuses, status) }); err != nil {
+	if _, err := ensurePortable(LocaleZH, func(status string) { statuses = append(statuses, status) }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,7 +121,7 @@ func TestEnsurePortableReplacesSameVersionWhenBundleChanges(t *testing.T) {
 	writeTestGreenZip(t, newZip, "1.0.2")
 	t.Setenv("OCTOP_DESKTOP_PORTABLE_ZIP", newZip)
 
-	if err := ensurePortable(LocaleZH, func(string) {}); err != nil {
+	if _, err := ensurePortable(LocaleZH, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
@@ -137,7 +137,7 @@ func TestEnsurePortableReplacesSameVersionWhenBundleChanges(t *testing.T) {
 	if err := os.WriteFile(stale, []byte("keep"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ensurePortable(LocaleZH, func(string) {}); err != nil {
+	if _, err := ensurePortable(LocaleZH, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 	if data, err := os.ReadFile(stale); err != nil || string(data) != "keep" {
@@ -173,7 +173,7 @@ func TestEnsurePortableUpgradesBundledVersionAfterDatabaseBackup(t *testing.T) {
 	}
 	t.Cleanup(func() { runSQLiteBackup = previousBackup })
 
-	if err := ensurePortable(LocaleZH, func(string) {}); err != nil {
+	if _, err := ensurePortable(LocaleZH, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 	if got := portableVersion(root); got != "0.9.32" {
@@ -206,7 +206,7 @@ func TestEnsurePortableKeepsRuntimeWhenDatabaseBackupFails(t *testing.T) {
 	runSQLiteBackup = func(_, _, _ string) error { return errors.New("backup unavailable") }
 	t.Cleanup(func() { runSQLiteBackup = previousBackup })
 
-	if err := ensurePortable(LocaleZH, func(string) {}); err == nil {
+	if _, err := ensurePortable(LocaleZH, func(string) {}); err == nil {
 		t.Fatal("backup failure should abort the runtime upgrade")
 	}
 	if got := portableVersion(root); got != "0.9.29" {
@@ -259,7 +259,7 @@ func TestEnsurePortableKeepsNewerExistingRuntime(t *testing.T) {
 
 			for startup := 0; startup < 2; startup++ {
 				var statuses []string
-				if err := ensurePortable(LocaleZH, func(status string) { statuses = append(statuses, status) }); err != nil {
+				if _, err := ensurePortable(LocaleZH, func(status string) { statuses = append(statuses, status) }); err != nil {
 					t.Fatal(err)
 				}
 				if got := portableVersion(root); got != test.installed {
@@ -281,6 +281,51 @@ func TestEnsurePortableKeepsNewerExistingRuntime(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestEnsurePortableReplacesOfficialBrandDrift(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OCTOP_HOME", home)
+	root := portableDir()
+
+	installedZip := filepath.Join(t.TempDir(), "installed.zip")
+	writeTestGreenZip(t, installedZip, "1.0.7")
+	if err := unzipGreen(installedZip, root); err != nil {
+		t.Fatal(err)
+	}
+
+	bundledZip := filepath.Join(t.TempDir(), "bundled.zip")
+	writeTestGreenZip(t, bundledZip, "1.0.7")
+	t.Setenv("OCTOP_DESKTOP_PORTABLE_ZIP", bundledZip)
+	if err := writePortableBundleStamp(root); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate PyPI「检查更新」mutating dashboard assets to upstream Octop branding
+	// while VERSION + .bundle-sha256 still match the Mammoth bundle.
+	index := filepath.Join(root, "packages", "octop", "dashboard", "index.html")
+	if err := os.MkdirAll(filepath.Dir(index), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	official := []byte("<html><title>Octop</title></html>\n")
+	if err := os.WriteFile(index, official, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if installedPortableMatchesMammothBrand(root) {
+		t.Fatal("fixture should look like official Octop branding")
+	}
+
+	var statuses []string
+	replaced, err := ensurePortable(LocaleZH, func(status string) { statuses = append(statuses, status) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replaced {
+		t.Fatalf("brand drift should force portable replace; statuses=%v", statuses)
+	}
+	if _, err := os.Stat(index); !os.IsNotExist(err) {
+		t.Fatalf("drifted index should be gone after replace: %v", err)
 	}
 }
 
@@ -332,7 +377,7 @@ func TestPortableVersionPrefersNewerMetadataOverVersionTxt(t *testing.T) {
 
 	for startup := 0; startup < 2; startup++ {
 		var statuses []string
-		if err := ensurePortable(LocaleZH, func(status string) { statuses = append(statuses, status) }); err != nil {
+		if _, err := ensurePortable(LocaleZH, func(status string) { statuses = append(statuses, status) }); err != nil {
 			t.Fatal(err)
 		}
 		if got := portableVersion(root); got != "1.0.2b5" {
@@ -367,7 +412,7 @@ func TestEnsurePortableKeepsCurrentRuntimeWhenReplacementIsInvalid(t *testing.T)
 	writeVersionOnlyZip(t, invalidZip, "0.9.32")
 	t.Setenv("OCTOP_DESKTOP_PORTABLE_ZIP", invalidZip)
 	var statuses []string
-	if err := ensurePortable(LocaleZH, func(status string) { statuses = append(statuses, status) }); err != nil {
+	if _, err := ensurePortable(LocaleZH, func(status string) { statuses = append(statuses, status) }); err != nil {
 		t.Fatalf("existing runtime should still boot after a failed replacement: %v", err)
 	}
 
@@ -402,7 +447,7 @@ func TestEnsurePortableReplacesLegacyRuntimeWithoutVersionFiles(t *testing.T) {
 	newZip := filepath.Join(t.TempDir(), "new.zip")
 	writeTestGreenZip(t, newZip, "0.9.32")
 	t.Setenv("OCTOP_DESKTOP_PORTABLE_ZIP", newZip)
-	if err := ensurePortable(LocaleZH, func(string) {}); err != nil {
+	if _, err := ensurePortable(LocaleZH, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 	if got := portableVersion(root); got != "0.9.32" {
@@ -509,7 +554,7 @@ func TestEnsurePortablePrereleaseUpgrade(t *testing.T) {
 			}
 			t.Cleanup(func() { runSQLiteBackup = previousBackup })
 
-			err := ensurePortable(LocaleZH, func(string) {})
+			_, err := ensurePortable(LocaleZH, func(string) {})
 			if (err != nil) != test.backupFails {
 				t.Fatalf("ensurePortable error = %v, backupFails = %v", err, test.backupFails)
 			}
@@ -544,7 +589,7 @@ func TestEnsurePortablePrereleaseUpgrade(t *testing.T) {
 			if err := os.WriteFile(marker, []byte("keep on restart"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if err := ensurePortable(LocaleZH, func(string) {}); err != nil {
+			if _, err := ensurePortable(LocaleZH, func(string) {}); err != nil {
 				t.Fatal(err)
 			}
 			if data, err := os.ReadFile(marker); err != nil || string(data) != "keep on restart" {

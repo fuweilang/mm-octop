@@ -37,20 +37,20 @@ func pythonExe(root string) string {
 	return filepath.Join(root, "runtime", "bin", "python3")
 }
 
-func ensurePortable(locale Locale, status func(string)) error {
+func ensurePortable(locale Locale, status func(string)) (replaced bool, err error) {
 	root := portableDir()
 	if launchReady(root) {
 		newer, sameVersionChanged := bundledRuntimeNeedsReplace(root)
 		if !newer && !sameVersionChanged {
 			status(desktopText(locale, copyStatusUsingRuntime))
-			return nil
+			return false, nil
 		}
 		if newer {
 			currentVersion := portableVersion(root)
 			bundledVersion, _ := bundledPortableVersion()
 			status(desktopText(locale, copyStatusBackupDatabase, bundledVersion))
 			if _, err := backupSQLiteBeforeUpgrade(root, currentVersion, bundledVersion); err != nil {
-				return fmt.Errorf("%s: %w", desktopText(locale, copyErrorBackupFailed), err)
+				return false, fmt.Errorf("%s: %w", desktopText(locale, copyErrorBackupFailed), err)
 			}
 		}
 		status(desktopText(locale, copyStatusUpdatingRuntime))
@@ -60,18 +60,18 @@ func ensurePortable(locale Locale, status func(string)) error {
 	if err := replacePortable(root); err != nil {
 		if launchReady(root) {
 			status(desktopText(locale, copyStatusUpdateFailedKeep))
-			return nil
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 	_ = writePortableBundleStamp(root)
 	if runtime.GOOS == "darwin" {
 		_ = exec.Command("xattr", "-dr", "com.apple.quarantine", root).Run()
 	}
 	if !launchReady(root) {
-		return fmt.Errorf("portable extract missing launch.py or python under %s", root)
+		return false, fmt.Errorf("portable extract missing launch.py or python under %s", root)
 	}
-	return nil
+	return true, nil
 }
 
 func bundledRuntimeNeedsReplace(root string) (newer bool, sameVersionChanged bool) {
@@ -79,6 +79,13 @@ func bundledRuntimeNeedsReplace(root string) (newer bool, sameVersionChanged boo
 	bundledVersion, err := bundledPortableVersion()
 	if err != nil || bundledVersion == "" {
 		return false, false
+	}
+	// MAMMOTH-PATCH: in-app PyPI「检查更新」writes official Octop wheels into
+	// ~/.octop/portable/packages without refreshing .bundle-sha256. Semver +
+	// stamp can still look current, so detect white-label brand drift and
+	// force a re-extract of the bundled Mammoth portable.
+	if !installedPortableMatchesMammothBrand(root) {
+		return true, false
 	}
 	if currentVersion == "" || compareVersions(bundledVersion, currentVersion) > 0 {
 		return true, false
@@ -91,6 +98,18 @@ func bundledRuntimeNeedsReplace(root string) (newer bool, sameVersionChanged boo
 		return false, false
 	}
 	return false, readPortableBundleStamp(root) != want
+}
+
+// installedPortableMatchesMammothBrand reports whether the extracted dashboard
+// still carries Mammoth white-label branding. Missing index.html (dev/test
+// fixtures) is treated as OK so brand checks do not force unnecessary replaces.
+func installedPortableMatchesMammothBrand(root string) bool {
+	index := filepath.Join(root, "packages", "octop", "dashboard", "index.html")
+	data, err := os.ReadFile(index)
+	if err != nil {
+		return true
+	}
+	return bytes.Contains(data, []byte("猛犸AI"))
 }
 
 func bundledPortableDigest() (string, error) {

@@ -18,13 +18,11 @@ import {
   ChevronUp,
   Settings,
   Palette,
-  RefreshCw,
   KeyRound,
   Lock,
   LockOpen,
   SlidersHorizontal,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { authApi } from "../api/modules/auth";
 import { preferencesApi } from "../api/modules/preferences";
@@ -43,7 +41,6 @@ import PaletteSwitcher from "./PaletteSwitcher";
 import type { OctopUser } from "../api/modules/auth";
 import { useLayoutMode } from "../context/LayoutModeContext";
 import type { LayoutMode } from "../layouts/layoutModeStorage";
-import { userCan } from "../utils/permissions";
 import feishuIcon from "../assets/channels/feishu.svg";
 import dingtalkIcon from "../assets/channels/dingtalk.svg";
 import wecomIcon from "../assets/channels/wecom.svg";
@@ -98,7 +95,6 @@ export default function AvatarDropdown({
   onCustomizeNav,
 }: AvatarDropdownProps) {
   const { t, i18n } = useTranslation();
-  const navigate = useNavigate();
   const role = useUserRole();
   const isMobile = useIsMobile();
   const { layoutMode, setLayoutMode } = useLayoutMode();
@@ -397,19 +393,7 @@ export default function AvatarDropdown({
         <span>{t("account.changePassword")}</span>
       </button>
 
-      {userCan(user, "update") && (
-        <button
-          type="button"
-          className={styles.menuItem}
-          onClick={() => {
-            setMenuOpen(false);
-            navigate("/admin/advanced?tab=updates");
-          }}
-        >
-          <RefreshCw size={16} strokeWidth={1.8} />
-          <span>{t("account.checkUpdates")}</span>
-        </button>
-      )}
+      {/* MAMMOTH-PATCH: hide upstream「检查更新」(Tencent Octop self-update channel) */}
 
       <Divider className={styles.menuDivider} />
 

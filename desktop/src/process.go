@@ -279,3 +279,29 @@ func dashboardURL(host string, port int) string {
 	}
 	return fmt.Sprintf("http://%s:%d/", host, port)
 }
+
+// stopListeningOctop terminates a process listening on host:port only when
+// /api/health proves it is Octop. Used after a portable replace so a stale
+// yesterday runtime cannot keep serving the new UI.
+func stopListeningOctop(host string, port int) {
+	if port < 1 || port > 65535 {
+		return
+	}
+	if !octopAlreadyRunning(dashboardURL(host, port)) {
+		return
+	}
+	for _, pid := range listeningPIDs(port) {
+		terminatePID(pid)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		inUse, err := listenProbe(host, port)
+		if err != nil || !inUse {
+			return
+		}
+		if !octopAlreadyRunning(dashboardURL(host, port)) {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
