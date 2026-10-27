@@ -1,0 +1,15 @@
+{
+  "fixed": {
+    "file_version": "0.9.26"
+  },
+  "info": {
+    "0000": {
+      "ProductVersion": "0.9.26",
+      "CompanyName": "猛犸AI",
+      "FileDescription": "猛犸智能体",
+      "LegalCopyright": "Copyright © 2026",
+      "ProductName": "猛犸智能体",
+      "Comments": "猛犸智能体"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# 猛犸联调：一次起 Octop 后端 + dashboard（带日志前缀）
+set -euo pipefail
+cd "$(dirname "$0")"
+export OCTOP_MAMMOTH_OIDC_ISSUER="${OCTOP_MAMMOTH_OIDC_ISSUER:-http://127.0.0.1:5201/console/api/oidc}"
+export OCTOP_PORT="${OCTOP_PORT:-8088}"
+export VITE_DEV_PORT="${VITE_DEV_PORT:-5203}"
+export VITE_HMR_CLIENT_PORT="${VITE_HMR_CLIENT_PORT:-5201}"
+
+prefix() {
+  local name="$1"
+  shift
+  "$@" 2>&1 | while IFS= read -r line || [[ -n "$line" ]]; do
+    printf '[%s] %s\n' "$name" "$line"
+  done
+}
+
+cleanup() {
+  trap - INT TERM EXIT
+  kill 0 2>/dev/null || true
+}
+trap cleanup INT TERM EXIT
+
+prefix octop bash -c 'exec uv run octop run --host 0.0.0.0 --port "$OCTOP_PORT" --reload' &
+prefix dash  bash -c 'cd dashboard && exec npm run dev' &
+wait

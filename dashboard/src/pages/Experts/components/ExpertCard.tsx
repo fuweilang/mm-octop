@@ -1,0 +1,83 @@
+// dashboard/src/pages/Experts/components/ExpertCard.tsx
+import { memo } from "react";
+import { useTranslation } from "react-i18next";
+import { CheckCircle } from "lucide-react";
+import { pickLocale } from "../../../utils/localizedText";
+import { ExpertIcon, resolveExpertAvatarUrl } from "./iconForName";
+import type { QuickPrompt } from "./welcomeManifest";
+import styles from "../index.module.less";
+
+export interface ExpertSummary {
+  id: string;
+  label: { zh?: string; en?: string };
+  description: { zh?: string; en?: string };
+  welcome_message?: { zh?: string; en?: string };
+  quick_prompts?: QuickPrompt[];
+  icon_name?: string | null;
+  icon_url?: string | null;
+  color?: string | null;
+  files?: string[];
+  task_examples?: { zh?: string[]; en?: string[] } | null;
+}
+
+interface ExpertCardProps {
+  expert: ExpertSummary;
+  lang: "zh" | "en";
+  isInstalled: boolean;
+  onCreate: (expert: ExpertSummary) => void;
+}
+
+export const ExpertCard = memo(function ExpertCard({
+  expert,
+  lang,
+  isInstalled,
+  onCreate,
+}: ExpertCardProps) {
+  const { t } = useTranslation();
+  const label = pickLocale(expert.label, lang) || expert.id;
+  const desc = pickLocale(expert.description, lang);
+  const accent = expert.color || "#2563eb";
+  const portraitUrl = resolveExpertAvatarUrl(expert.icon_url);
+
+  return (
+    <div
+      className={styles.expertTemplateCard}
+      onClick={() => onCreate(expert)}
+      style={
+        {
+          "--expert-accent": accent,
+        } as React.CSSProperties
+      }
+    >
+      {/* Icon + title */}
+      <div className={styles.expertTemplateHeader}>
+        <div className={styles.agentCardIcon}>
+          <ExpertIcon
+            iconUrl={portraitUrl}
+            iconName={expert.icon_name}
+            size={40}
+          />
+        </div>
+        <div className={styles.agentCardTitleBlock}>
+          <div className={styles.agentCardName}>{label}</div>
+        </div>
+      </div>
+
+      {/* Description */}
+      <div className={styles.agentCardDesc}>{desc || "\u00a0"}</div>
+
+      {/* Footer */}
+      <div className={styles.expertCardFooter}>
+        <div className={styles.expertCardHint}>
+          {t("experts.createFromTemplate")}
+        </div>
+        {isInstalled && (
+          <div className={styles.expertInstalledLabel}>
+            <CheckCircle size={12} />
+            {t("experts.installedBadge")}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
