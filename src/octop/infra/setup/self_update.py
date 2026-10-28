@@ -140,7 +140,36 @@ def find_uv_executable() -> str:
     return "uv"
 
 
+def _mammoth_configured_version() -> str | None:
+    """Prefer Mammoth product version from env or ground/config/version.json."""
+    env = os.environ.get("MAMMOTH_APP_VERSION", "").strip()
+    if env:
+        return env
+    try:
+        # .../Octop/src/octop/infra/setup/self_update.py -> Octop root = parents[4]
+        octop_root = Path(__file__).resolve().parents[4]
+        parent = octop_root.parent
+        for rel in (
+            "ground/config/version.json",
+            "src/config/version.json",
+            "config/version.json",
+        ):
+            path = parent / rel
+            if not path.is_file():
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            ver = str(data.get("version") or "").strip()
+            if ver:
+                return ver
+    except Exception:
+        return None
+    return None
+
+
 def get_local_version() -> str:
+    configured = _mammoth_configured_version()
+    if configured:
+        return configured
     try:
         from importlib.metadata import version
 

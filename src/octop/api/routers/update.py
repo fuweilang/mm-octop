@@ -99,7 +99,8 @@ def _present_status(
     stable_only: bool,
     include_prerelease: bool,
 ) -> dict[str, Any]:
-    current = str(cached.get("current_version") or get_local_version())
+    # Always read live local version; do not freeze it in the PyPI check cache.
+    current = get_local_version()
     latest_any = cached.get("latest_any") or cached.get("latest_version")
     latest_stable = cached.get("latest_stable")
     latest = _channel_latest(latest_any, latest_stable, include_prerelease=include_prerelease)

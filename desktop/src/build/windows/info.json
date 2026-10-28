@@ -1,15 +1,15 @@
 {
-  "fixed": {
-    "file_version": "0.9.26"
-  },
-  "info": {
-    "0000": {
-      "ProductVersion": "0.9.26",
-      "CompanyName": "猛犸AI",
-      "FileDescription": "猛犸智能体",
-      "LegalCopyright": "Copyright © 2026",
-      "ProductName": "猛犸智能体",
-      "Comments": "猛犸智能体"
+    "fixed": {
+        "file_version": "1.1.0"
+    },
+    "info": {
+        "0000": {
+            "ProductVersion": "1.1.0",
+            "CompanyName": "\u731b\u72b8AI",
+            "FileDescription": "\u731b\u72b8\u667a\u80fd\u4f53",
+            "LegalCopyright": "Copyright \u00a9 2026",
+            "ProductName": "\u731b\u72b8\u667a\u80fd\u4f53",
+            "Comments": "\u731b\u72b8\u667a\u80fd\u4f53"
+        }
     }
-  }
 }
