@@ -67,6 +67,12 @@ help:
 	@echo "  test             pytest -m \"not live\""
 	@echo "  test-live        pytest -m live"
 	@echo ""
+	@echo "Verify targets (daily, tiered):"
+	@echo "  verify           Auto-route by git diff; unknown layer → full make test"
+	@echo "  verify-web       typecheck-frontend + build-frontend (dashboard)"
+	@echo "  verify-api       ruff (changed files) + mypy + pytest --testmon"
+	@echo "  verify-desktop   go vet + go test (desktop/src, host platform)"
+	@echo ""
 	@echo "Quality targets (frontend):"
 	@echo "  lint-frontend    ESLint + Prettier check"
 	@echo "  format-frontend  Prettier write"
@@ -255,6 +261,59 @@ precommit: format-all lint typecheck test-affected
 test-affected:
 	@echo "[test] pytest (testmon: only tests affected by changes)..."
 	$(RUN) pytest --testmon
+
+# ─── Verify (分层验证) ───────────────────────────────────────────────────────
+# 日常按改动层跑，十秒级反馈；全量 `make test` 只在提交前或 CI 跑。
+#   make verify-web      改 dashboard/ → tsc -b + 构建
+#   make verify-api      改 src/ tests/ → ruff(仅改动文件) + mypy + testmon
+#   make verify-desktop  改 desktop/ → go vet + go test
+#   make verify          按 `git diff --name-only HEAD` 自动选层，识别不出退回全量
+# 首次用 testmon 需要一次全量建立基线（.testmondata，已 gitignore）：
+#   make test
+
+.PHONY: verify-web
+verify-web: typecheck-frontend build-frontend
+
+.PHONY: verify-api
+verify-api:
+	@echo "[verify-api] ruff check (changed files only)..."
+	@files=$$(git diff --name-only --diff-filter=ACMR HEAD | grep -E '\.py$$' || true); \
+	if [ -n "$$files" ]; then $(RUN) ruff check $$files; else echo "  (no changed .py — skipped)"; fi
+	@echo "[verify-api] mypy..."
+	$(RUN) mypy src/octop
+	@echo "[verify-api] pytest (testmon: affected only)..."
+	$(RUN) pytest --testmon
+
+.PHONY: verify-desktop
+verify-desktop:
+	@echo "[verify-desktop] go vet + go test (host platform)..."
+	cd desktop/src && go vet ./... && go test ./...
+
+# Layer routing by changed paths. Anything we cannot classify (Makefile, CI,
+# docs, new scripts) falls back to the full suite rather than silently skipping.
+.PHONY: verify
+verify:
+	@set -e; \
+	files=$$(git diff --name-only --diff-filter=ACMR HEAD); \
+	web=0; api=0; desktop=0; unknown=0; \
+	for f in $$files; do \
+		case "$$f" in \
+			dashboard/*) web=1 ;; \
+			desktop/*) desktop=1 ;; \
+			src/*|tests/*|pyproject.toml|uv.lock|Makefile) api=1 ;; \
+			*.md|docs/*|.github/*|.githooks/*) ;; \
+			*) unknown=1 ;; \
+		esac; \
+	done; \
+	if [ -z "$$files" ] || [ "$$unknown" = "1" ]; then \
+		echo "[verify] 未识别改动层或没有改动 → 全量 make test"; \
+		$(MAKE) test; \
+		exit 0; \
+	fi; \
+	if [ "$$web" = "1" ]; then echo "[verify] → web"; $(MAKE) verify-web; fi; \
+	if [ "$$api" = "1" ]; then echo "[verify] → api"; $(MAKE) verify-api; fi; \
+	if [ "$$desktop" = "1" ]; then echo "[verify] → desktop"; $(MAKE) verify-desktop; fi; \
+	echo "[verify] done"
 
 # ─── Quality (frontend) ──────────────────────────────────────────────────────
 

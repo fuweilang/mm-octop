@@ -1,9 +1,12 @@
 name: CI
 
-# Pull requests only. GitHub runs PR checks on the merge result, so a push
-# build on main would re-test content that the release / feature PR already
-# proved green.
+# Pushes to the branches we actually work on (1.0 / main) plus pull requests.
+# We push straight to 1.0 during the daily loop, so PR-only triggers never fired
+# and CI was effectively dead. Jobs are split per layer (api / web / desktop) so
+# a failure points at one place instead of a serial 25-minute run.
 on:
+  push:
+    branches: [1.0, main]
   pull_request:
 
 concurrency:
@@ -11,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: "Python ${{ matrix.python-version }}"
+  api:
+    name: API / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     # Post-release main → develop sync PRs carry main's already-tested tree and
     # are auto-merged by the bot before checks finish. See sync-main-to-develop.
@@ -22,7 +25,7 @@ jobs:
       matrix:
         python-version: ["3.12"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: astral-sh/setup-uv@v4
         with:
@@ -41,12 +44,12 @@ jobs:
       - name: Test
         run: make test
 
-  test-windows:
-    name: Windows / Python 3.12
+  api-windows:
+    name: API / Windows / Python 3.12
     runs-on: windows-latest
     if: ${{ !startsWith(github.head_ref, 'chore/sync-develop-after-') }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: astral-sh/setup-uv@v4
         with:
@@ -65,15 +68,70 @@ jobs:
       - name: Test
         run: make test
 
+  web:
+    name: Web / dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Enable pnpm store cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('dashboard/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check (tsc -b)
+        working-directory: dashboard
+        run: pnpm exec tsc -b
+
+      - name: Build (vite → src/octop/dashboard)
+        run: make build-frontend
+
+  desktop:
+    name: Desktop / Go
+    # The desktop shell targets darwin/win32 only (wails); build it on macOS so
+    # vet/test run against the platform it actually ships to. No packaging here.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: desktop/src/go.mod
+          cache-dependency-path: desktop/src/go.sum
+
+      - name: go vet
+        working-directory: desktop/src
+        run: go vet ./...
+
+      - name: go test
+        working-directory: desktop/src
+        run: go test ./...
+
   live-tests:
     name: "Live tests (real credentials)"
     runs-on: ubuntu-latest
     # Only the main repo may access secrets; fork PRs get none and must skip.
+    # Push events have no pull_request payload, so this stays PR-only on purpose.
     if: >-
+      github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       !startsWith(github.head_ref, 'chore/sync-develop-after-')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: astral-sh/setup-uv@v4
         with:

@@ -199,7 +199,20 @@ cd dashboard && pnpm exec tsc -b       # frontend typecheck (after UI changes)
 make build-frontend                     # dashboard/ → src/octop/dashboard/
 ```
 
-**Git hooks (required for local commits):** after cloning, run **`make install-hooks`** once. That sets `core.hooksPath=.githooks` so every `git commit` runs **`make all`** (which first runs **`format-all`**: backend Ruff + dashboard Prettier write, then lint / typecheck / test) and dashboard **`pnpm run build`**. Formatted files that were already staged are re-added so the commit includes the formatted content. Bypass only in emergencies: `SKIP_PRECOMMIT=1 git commit …` or `git commit --no-verify`. Do **not** skip hooks to land red tests — fix the suite first (CI runs on Linux **and** Windows).
+**Git hooks (required for local commits):** after cloning, run **`make install-hooks`** once. That sets `core.hooksPath=.githooks` so every `git commit` runs **`make precommit`** (`format-all` + `lint` + `typecheck` + `test-affected`, i.e. pytest-testmon on the changed files) and dashboard **`pnpm run build`**. Formatted files that were already staged are re-added so the commit includes the formatted content. Bypass only in emergencies: `SKIP_PRECOMMIT=1 git commit …` or `git commit --no-verify`. Do **not** skip hooks to land red tests — fix the suite first (CI runs on Linux **and** Windows).
+
+**Tiered verification (daily loop):** pick the layer you touched, do not run the full suite.
+
+| Target | Run when | What it does | Time |
+|--------|----------|--------------|------|
+| `make verify-web` | `dashboard/` changed | `tsc -b` + dashboard build | ~20s |
+| `make verify-api` | `src/` or `tests/` changed | ruff (changed files only) + mypy + `pytest --testmon` | seconds |
+| `make verify-desktop` | `desktop/` changed | `go vet` + `go test ./...` (host platform) | ~1s |
+| `make verify` | unsure | routes by `git diff --name-only HEAD`; unknown paths → full `make test` | — |
+
+Full `make test` (`pytest -m "not live"`, ~5k tests, ~10 min) runs **only** before a commit you intend to push, or in CI. The first `--testmon` run has no baseline and therefore executes everything once (`.testmondata`, gitignored); after that it is incremental.
+
+**Before a release** (not part of the daily loop): full `make test` **and** the desktop two-platform build (darwin + windows) — see the `baota-release` skill checklist.
 
 ## 7. Key patterns
 
