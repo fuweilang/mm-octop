@@ -405,6 +405,26 @@ func TestPortRunsFromIgnoresForeignListener(t *testing.T) {
 	}
 }
 
+func TestStopListeningOctopLeavesHealthyForeignOctopAlone(t *testing.T) {
+	t.Setenv("OCTOP_HOME", t.TempDir())
+	// A dev checkout or a container proxy can answer /api/health perfectly
+	// well; that does not make it ours to kill.
+	srv := httptest.NewServer(octopHealthHandlerWithVersion("1.0.9"))
+	defer srv.Close()
+	port := srv.Listener.Addr().(*net.TCPAddr).Port
+	if !octopAlreadyRunning(srv.URL) {
+		t.Fatal("handler must look like a running Octop")
+	}
+
+	stopListeningOctop("127.0.0.1", port)
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("a healthy Octop outside the portable tree must not be killed: %v", err)
+	}
+	_ = resp.Body.Close()
+}
+
 func TestStopOurInstancesLeavesForeignPortsAlone(t *testing.T) {
 	t.Setenv("OCTOP_HOME", t.TempDir())
 	srv := httptest.NewServer(http.NotFoundHandler())

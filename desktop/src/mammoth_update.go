@@ -337,6 +337,13 @@ func (a *App) hotRestartOctop(locale Locale, root, host string, preferred int) e
 	if err != nil {
 		return err
 	}
+	if port != configured {
+		log.Printf(
+			"desktop: update restart moved to port %d (configured %d is busy); the dashboard origin changed",
+			port,
+			configured,
+		)
+	}
 	a.mu.Lock()
 	cmd, err := startOctop(root, port)
 	a.cmd = cmd

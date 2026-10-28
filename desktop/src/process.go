@@ -362,11 +362,11 @@ func dashboardURL(host string, port int) string {
 }
 
 // stopListeningOctop terminates processes on host:port that provably belong to
-// this user's Mammoth install: either a healthy Octop (strict /api/health) or a
-// python started from ~/.octop/portable/runtime. The second case matters —
-// a half-started 1.0.x leftover never answers /api/health, so the old check
-// could not kill it and the shell ended up running 8088 + 8089 side by side.
-// Foreign programs on the port are never touched.
+// this user's Mammoth install, i.e. started from ~/.octop/portable/runtime.
+// Ownership is checked by command line rather than /api/health: a half-started
+// leftover never answers /api/health, and a healthy Octop from a dev checkout
+// or a container proxy is not ours to kill — that is reported as a port
+// conflict instead.
 func stopListeningOctop(host string, port int) {
 	if port < 1 || port > 65535 {
 		return
@@ -375,11 +375,10 @@ func stopListeningOctop(host string, port int) {
 	if len(pids) == 0 {
 		return
 	}
-	healthy := octopAlreadyRunning(dashboardURL(host, port))
 	root := portableDir()
 	killed := 0
 	for _, pid := range pids {
-		if !healthy && !processRunsFrom(pid, root) {
+		if !processRunsFrom(pid, root) {
 			continue
 		}
 		terminatePID(pid)
