@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,17 @@ func (e cannotBindError) Error() string {
 }
 
 func (e cannotBindError) Unwrap() error { return e.Err }
+
+// portOccupiedError means another program owns the configured port. We refuse
+// to move to the next port silently: a different port is a different origin,
+// which throws away the dashboard login (localStorage is origin-scoped).
+type portOccupiedError struct {
+	Port int
+}
+
+func (e portOccupiedError) Error() string {
+	return fmt.Sprintf("port %d is in use by another program", e.Port)
+}
 
 func mustEnv(cmd *exec.Cmd, extra map[string]string) {
 	cmd.Env = overlayEnv(os.Environ(), extra)
@@ -198,6 +210,24 @@ func chooseFreePort(host string, start int) (int, error) {
 	})
 }
 
+// chooseStartPort prefers the configured port. When another program owns it we
+// stop instead of silently shifting to 8089+: the dashboard login lives in
+// localStorage, which is keyed by origin, so a port change signs the user out.
+// “allowAlternate“ is only set after the user clicks the explicit button.
+func chooseStartPort(host string, preferred int, allowAlternate bool) (int, error) {
+	inUse, err := listenProbe(host, preferred)
+	if err != nil {
+		return 0, cannotBindError{Host: probeHost(host), Port: preferred, Err: err}
+	}
+	if !inUse {
+		return preferred, nil
+	}
+	if !allowAlternate {
+		return 0, portOccupiedError{Port: preferred}
+	}
+	return chooseFreePort(host, preferred+1)
+}
+
 func firstFreePort(start int, probe func(int) (bool, error)) (int, error) {
 	if start < 1 || start > 65535 {
 		start = 8088
@@ -230,34 +260,84 @@ func listenProbe(host string, port int) (bool, error) {
 	return false, err
 }
 
-func octopAlreadyRunning(base string) bool {
-	// Strict on purpose (unlike waitHealth in download.go): only a fully
-	// initialized 2xx + {ok, users_loaded, agents_running} payload counts as
-	// "already running" — this decides single-instance takeover, so a
-	// half-started or foreign service on the port must not be mistaken for us.
+type octopHealthPayload struct {
+	OK            bool            `json:"ok"`
+	UsersLoaded   json.RawMessage `json:"users_loaded"`
+	AgentsRunning json.RawMessage `json:"agents_running"`
+	Version       string          `json:"version"`
+}
+
+// probeOctopHealth is strict on purpose (unlike waitHealth in download.go):
+// only a fully initialized 2xx + {ok, users_loaded, agents_running} payload
+// counts as "already running" — this decides single-instance takeover, so a
+// half-started or foreign service on the port must not be mistaken for us.
+func probeOctopHealth(base string) (octopHealthPayload, bool) {
+	var payload octopHealthPayload
 	client := &http.Client{Timeout: 800 * time.Millisecond}
 	url := strings.TrimRight(base, "/") + "/api/health"
 	resp, err := client.Get(url)
 	if err != nil {
-		return false
+		return payload, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return false
+		return payload, false
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return false
-	}
-	var payload struct {
-		OK            bool            `json:"ok"`
-		UsersLoaded   json.RawMessage `json:"users_loaded"`
-		AgentsRunning json.RawMessage `json:"agents_running"`
+		return payload, false
 	}
 	if json.Unmarshal(body, &payload) != nil {
+		return payload, false
+	}
+	if !payload.OK || len(payload.UsersLoaded) == 0 || len(payload.AgentsRunning) == 0 {
+		return payload, false
+	}
+	return payload, true
+}
+
+func octopAlreadyRunning(base string) bool {
+	_, ok := probeOctopHealth(base)
+	return ok
+}
+
+// dashboardVersion returns the runtime version reported by /api/health, or ""
+// when the instance predates the field (1.0.x) or the probe fails.
+func dashboardVersion(base string) string {
+	payload, ok := probeOctopHealth(base)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(payload.Version)
+}
+
+// dashboardIsCurrent reports whether the instance at base may be reused for
+// this portable tree. A missing version means an old build (stale), an older
+// version means the portable was upgraded under a running process (stale), and
+// a newer-or-equal version means the process is fine (in-app PyPI bump keeps
+// the running server).
+func dashboardIsCurrent(base, wantVersion string) bool {
+	if strings.TrimSpace(wantVersion) == "" {
+		return true // cannot judge from disk; keep the previous behaviour
+	}
+	got := dashboardVersion(base)
+	if got == "" {
 		return false
 	}
-	return payload.OK && len(payload.UsersLoaded) > 0 && len(payload.AgentsRunning) > 0
+	return compareVersions(got, wantVersion) >= 0
+}
+
+// portFromDashboardURL extracts the port used by a running dashboard URL.
+func portFromDashboardURL(base string) (int, bool) {
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return 0, false
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return 0, false
+	}
+	return port, true
 }
 
 func probeHost(host string) string {
@@ -280,28 +360,59 @@ func dashboardURL(host string, port int) string {
 	return fmt.Sprintf("http://%s:%d/", host, port)
 }
 
-// stopListeningOctop terminates a process listening on host:port only when
-// /api/health proves it is Octop. Used after a portable replace so a stale
-// yesterday runtime cannot keep serving the new UI.
+// stopListeningOctop terminates processes on host:port that provably belong to
+// this user's Mammoth install: either a healthy Octop (strict /api/health) or a
+// python started from ~/.octop/portable/runtime. The second case matters —
+// a half-started 1.0.x leftover never answers /api/health, so the old check
+// could not kill it and the shell ended up running 8088 + 8089 side by side.
+// Foreign programs on the port are never touched.
 func stopListeningOctop(host string, port int) {
 	if port < 1 || port > 65535 {
 		return
 	}
-	if !octopAlreadyRunning(dashboardURL(host, port)) {
+	pids := listeningPIDs(port)
+	if len(pids) == 0 {
 		return
 	}
-	for _, pid := range listeningPIDs(port) {
+	healthy := octopAlreadyRunning(dashboardURL(host, port))
+	root := portableDir()
+	killed := 0
+	for _, pid := range pids {
+		if !healthy && !processRunsFrom(pid, root) {
+			continue
+		}
 		terminatePID(pid)
+		killed++
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	if killed == 0 {
+		return
+	}
+	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		inUse, err := listenProbe(host, port)
 		if err != nil || !inUse {
 			return
 		}
-		if !octopAlreadyRunning(dashboardURL(host, port)) {
-			return
-		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// processRunsFrom reports whether pid was started from the given directory.
+// Used to recognise our own portable python even when it is not serving yet.
+func processRunsFrom(pid int, dir string) bool {
+	if pid <= 0 {
+		return false
+	}
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return false
+	}
+	command := strings.ToLower(processCommandLine(pid))
+	if command == "" {
+		return false
+	}
+	needle := strings.ToLower(filepath.Clean(dir))
+	return strings.Contains(command, needle+strings.ToLower(string(os.PathSeparator))) ||
+		strings.Contains(command, needle+"/") ||
+		strings.Contains(command, needle+"\\")
 }

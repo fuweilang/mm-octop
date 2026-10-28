@@ -11,10 +11,12 @@
     "status.first_extract": "首次启动，正在解压内置运行环境…",
     "status.update_failed_keep": "更新内置运行环境失败，继续使用已有运行环境…",
     "status.using_existing": "猛犸AI 已在运行，正在打开…",
+    "status.replacing_stale": "检测到旧版本服务仍在运行，正在重启到当前版本…",
     "error.backup_failed": "升级前数据库备份失败，已保留当前版本",
     "error.upgrade_failed": "客户端运行环境升级失败，已保留当前版本",
     "error.no_free_port": "从 %d 到 %d 没有空闲端口，请关闭占用这些端口的程序后再试。",
     "error.cannot_bind": "无法在 %s:%d 上监听（%s）。请检查 config.json 里的 bind_host。",
+    "error.port_occupied": "端口 %d 被其他程序占用。请关闭占用该端口的程序，或点下面的按钮换一个端口启动（换端口后需要重新登录）。",
     "wait.1_minute": "1 分钟",
     "wait.n_minutes": "%d 分钟",
     "wait.1_second": "1 秒",
@@ -49,7 +51,12 @@
     "status.mammoth_shell_newer": "桌面壳有新版本 %s，请从官网重新下载安装包（壳内静默替换尚未支持）",
     "error.mammoth_update_failed": "猛犸更新失败：%s",
     "error.mammoth_sha_mismatch": "下载包校验失败（sha256 不匹配）",
-    "warn.legacy_shell": "检测到同标识的旧版「猛犸AI」安装，请优先使用「猛犸智能体」并卸载旧版，避免双开抢端口。"
+    "warn.legacy_shell": "检测到同标识的旧版「猛犸AI」安装，请优先使用「猛犸智能体」并卸载旧版，避免双开抢端口。",
+    "warn.legacy_autostart": "已停止旧版「猛犸AI」的开机自启。建议在设置里定位并卸载旧版，避免旧进程再次占用 8088。",
+    "altPort": "换端口启动（需重新登录）",
+    "legacyTitle": "旧版「猛犸AI」",
+    "legacyHint": "检测到仍安装，旧版会抢先占用 8088。已停止它的开机自启。",
+    "legacyReveal": "定位旧版"
   },
   "en": {
     "status.connecting": "Connecting to 猛犸AI…",
@@ -63,10 +70,12 @@
     "status.first_extract": "First launch: unpacking the bundled runtime…",
     "status.update_failed_keep": "Runtime update failed; using the existing runtime…",
     "status.using_existing": "猛犸AI is already running. Opening it…",
+    "status.replacing_stale": "An older 猛犸AI service is still running. Restarting it on this version…",
     "error.backup_failed": "Database backup failed before upgrade; the current version was preserved",
     "error.upgrade_failed": "Desktop runtime upgrade failed; the current version was preserved",
     "error.no_free_port": "No free port from %d to %d. Close the program using these ports and try again.",
     "error.cannot_bind": "Cannot listen on %s:%d (%s). Check bind_host in config.json.",
+    "error.port_occupied": "Port %d is used by another program. Close it, or use the button below to start on a different port (you will need to sign in again).",
     "wait.1_minute": "1 minute",
     "wait.n_minutes": "%d minutes",
     "wait.1_second": "1 second",
@@ -101,6 +110,11 @@
     "status.mammoth_shell_newer": "Desktop shell %s is available — re-download the installer from the website (in-app shell replace is not supported yet)",
     "error.mammoth_update_failed": "Mammoth update failed: %s",
     "error.mammoth_sha_mismatch": "Download checksum failed (sha256 mismatch)",
-    "warn.legacy_shell": "Another install with the same bundle id (legacy 猛犸AI) was found. Prefer 猛犸智能体 and remove the old app to avoid port conflicts."
+    "warn.legacy_shell": "Another install with the same bundle id (legacy 猛犸AI) was found. Prefer 猛犸智能体 and remove the old app to avoid port conflicts.",
+    "warn.legacy_autostart": "Disabled the legacy 猛犸AI login item. Remove the old app from Settings to stop it reclaiming port 8088.",
+    "altPort": "Start on another port (sign-in required)",
+    "legacyTitle": "Legacy 猛犸AI",
+    "legacyHint": "Still installed and able to grab port 8088. Its login item has been disabled.",
+    "legacyReveal": "Show legacy app"
   }
 }

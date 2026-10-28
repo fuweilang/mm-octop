@@ -22,6 +22,9 @@ type Settings struct {
 	MinimizeToTray bool   `json:"minimizeToTray"`
 	PreventSleep   bool   `json:"preventSleep"`
 	Port           int    `json:"port,omitempty"`
+	// AlternatePort is the port the user explicitly accepted after a conflict.
+	// Keeping it stable keeps the dashboard origin (and login) stable too.
+	AlternatePort int `json:"alternatePort,omitempty"`
 }
 
 func defaultSettings() Settings {

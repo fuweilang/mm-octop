@@ -118,6 +118,9 @@
             <span class="loading-bar-fill"></span>
           </div>
           <p class="loading-status" id="status">正在启动，请稍候…</p>
+          <button class="alt-port hidden" id="alt-port" type="button">
+            换端口启动（需重新登录）
+          </button>
         </div>
       </div>
     </div>
@@ -170,6 +173,17 @@
               <input type="checkbox" id="sleep" />
               <span></span>
             </label>
+          </div>
+          <div class="row hidden" id="legacy-row">
+            <div>
+              <div class="label" id="l-legacy">旧版「猛犸AI」</div>
+              <small id="h-legacy"
+                >检测到仍安装，旧版会抢先占用 8088。已停止它的开机自启。</small
+              >
+            </div>
+            <button class="row-action" id="legacy-reveal" type="button">
+              定位旧版
+            </button>
           </div>
         </div>
         <div class="actions">

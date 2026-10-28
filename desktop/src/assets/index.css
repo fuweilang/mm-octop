@@ -288,6 +288,35 @@
       .actions .ghost:hover {
         background: var(--bg-secondary);
       }
+      .row-action {
+        flex-shrink: 0;
+        padding: 6px 10px;
+        font: inherit;
+        font-size: 13px;
+        color: var(--text-secondary);
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .row-action:hover {
+        background: var(--bg-primary);
+        color: var(--text-primary);
+      }
+      .alt-port {
+        align-self: center;
+        padding: 7px 14px;
+        font: inherit;
+        font-size: 13px;
+        color: var(--brand);
+        background: var(--brand-soft);
+        border: 1px solid transparent;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .alt-port:hover {
+        background: #e3edfe;
+      }
       .status {
         min-height: 1.4em;
         margin: 12px 0 0;

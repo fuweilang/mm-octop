@@ -221,14 +221,165 @@ func TestFindRunningDashboardIgnoresDeadRememberedPort(t *testing.T) {
 }
 
 func octopHealthHandler() http.Handler {
+	return octopHealthHandlerWithVersion("")
+}
+
+// octopHealthHandlerWithVersion mimics /api/health. An empty version models the
+// 1.0.x builds that predate the field.
+func octopHealthHandlerWithVersion(version string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/health" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"users_loaded":1,"agents_running":0}`))
+		payload := `{"ok":true,"users_loaded":1,"agents_running":0`
+		if version != "" {
+			payload += fmt.Sprintf(`,"version":%q`, version)
+		}
+		payload += "}"
+		_, _ = w.Write([]byte(payload))
 	})
+}
+
+func TestDashboardVersionReadsHealthField(t *testing.T) {
+	srv := httptest.NewServer(octopHealthHandlerWithVersion("1.1.1"))
+	defer srv.Close()
+	if got := dashboardVersion(srv.URL); got != "1.1.1" {
+		t.Fatalf("version = %q", got)
+	}
+}
+
+func TestDashboardVersionEmptyForLegacyBuild(t *testing.T) {
+	srv := httptest.NewServer(octopHealthHandler())
+	defer srv.Close()
+	if got := dashboardVersion(srv.URL); got != "" {
+		t.Fatalf("legacy build must report no version, got %q", got)
+	}
+}
+
+func TestDashboardIsCurrentAcceptsSameVersion(t *testing.T) {
+	srv := httptest.NewServer(octopHealthHandlerWithVersion("1.1.1"))
+	defer srv.Close()
+	if !dashboardIsCurrent(srv.URL, "1.1.1") {
+		t.Fatal("same runtime version must be reusable")
+	}
+}
+
+func TestDashboardIsCurrentRejectsOlderRuntime(t *testing.T) {
+	srv := httptest.NewServer(octopHealthHandlerWithVersion("1.0.8"))
+	defer srv.Close()
+	if dashboardIsCurrent(srv.URL, "1.1.1") {
+		t.Fatal("an older running runtime must be replaced")
+	}
+}
+
+func TestDashboardIsCurrentRejectsVersionlessRuntime(t *testing.T) {
+	srv := httptest.NewServer(octopHealthHandler())
+	defer srv.Close()
+	if dashboardIsCurrent(srv.URL, "1.1.1") {
+		t.Fatal("1.0.x (no version field) must be replaced")
+	}
+}
+
+func TestDashboardIsCurrentKeepsNewerRuntime(t *testing.T) {
+	// In-app PyPI upgrades can move the running server ahead of the bundled
+	// portable; that process is fine and must not be killed.
+	srv := httptest.NewServer(octopHealthHandlerWithVersion("1.1.2"))
+	defer srv.Close()
+	if !dashboardIsCurrent(srv.URL, "1.1.1") {
+		t.Fatal("a newer running runtime must be kept")
+	}
+}
+
+func TestDashboardIsCurrentKeepsInstanceWhenLocalVersionUnknown(t *testing.T) {
+	srv := httptest.NewServer(octopHealthHandler())
+	defer srv.Close()
+	if !dashboardIsCurrent(srv.URL, "") {
+		t.Fatal("without a local version the previous attach behaviour must stay")
+	}
+}
+
+func TestPortFromDashboardURL(t *testing.T) {
+	port, ok := portFromDashboardURL("http://127.0.0.1:8088/")
+	if !ok || port != 8088 {
+		t.Fatalf("port = %d, ok = %v", port, ok)
+	}
+	if _, ok := portFromDashboardURL("http://127.0.0.1/"); ok {
+		t.Fatal("a URL without a port must not parse")
+	}
+}
+
+func TestChooseStartPortUsesPreferredWhenFree(t *testing.T) {
+	port := freeTCPPort(t)
+	got, err := chooseStartPort("127.0.0.1", port, false)
+	if err != nil || got != port {
+		t.Fatalf("port = %d, err = %v", got, err)
+	}
+}
+
+func TestChooseStartPortRefusesForeignOccupiedPort(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+	_, err = chooseStartPort("127.0.0.1", port, false)
+	var occupied portOccupiedError
+	if !errors.As(err, &occupied) || occupied.Port != port {
+		t.Fatalf("err = %v; a silent port shift would sign the user out", err)
+	}
+}
+
+func TestChooseStartPortFallsBackOnlyWhenAllowed(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+	got, err := chooseStartPort("127.0.0.1", port, true)
+	if err != nil || got == port {
+		t.Fatalf("port = %d, err = %v", got, err)
+	}
+}
+
+func TestStopListeningOctopLeavesForeignListenerAlone(t *testing.T) {
+	t.Setenv("OCTOP_HOME", t.TempDir())
+	srv := httptest.NewServer(http.NotFoundHandler())
+	defer srv.Close()
+	port := srv.Listener.Addr().(*net.TCPAddr).Port
+	stopListeningOctop("127.0.0.1", port)
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("foreign listener was killed: %v", err)
+	}
+	_ = resp.Body.Close()
+}
+
+func TestProcessRunsFromMatchesOwnExecutable(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Skip("no executable path")
+	}
+	if !processRunsFrom(os.Getpid(), filepath.Dir(exe)) {
+		t.Fatal("the test process runs from its own executable directory")
+	}
+	if processRunsFrom(os.Getpid(), filepath.Join(t.TempDir(), "nowhere")) {
+		t.Fatal("an unrelated directory must not match")
+	}
+}
+
+func freeTCPPort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	return port
 }
 
 func errorAs(err error, target *noFreePortError) bool {

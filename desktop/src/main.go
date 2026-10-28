@@ -41,6 +41,14 @@ type App struct {
 	trayClickTimer *time.Timer
 	drops          dropServer
 	ownsListenPort bool
+	// alternatePort is set only by RetryWithAlternatePort (explicit user action
+	// after a port conflict). Normal boots always try the configured port.
+	alternatePort bool
+	// portBlocked mirrors the last reportPortOccupied so the loading page can
+	// re-show the "another port" button after a reload (the event is fire-and-forget).
+	portBlocked bool
+	legacyOnce  sync.Once
+	legacyApp   string
 }
 
 func (a *App) ServiceName() string { return "desktop" }
@@ -181,8 +189,14 @@ func (a *App) boot() {
 		a.showDashboard(url)
 		return
 	}
-	if legacy := detectLegacySiblingInstall(); legacy != "" {
+	if legacy := a.legacyInstall(); legacy != "" {
 		warn := desktopText(locale, copyWarnLegacyShell)
+		// Stop the legacy login item automatically; the app itself is left in
+		// place so the user can remove it deliberately.
+		if moved := disableLegacyAutostart(legacy); len(moved) > 0 {
+			log.Printf("desktop: moved legacy autostart entries to %s", strings.Join(moved, ", "))
+			warn = desktopText(locale, copyWarnLegacyAutostart)
+		}
 		log.Printf("desktop: %s (%s)", warn, legacy)
 		a.setStatus(warn)
 	}
@@ -197,7 +211,8 @@ func (a *App) boot() {
 	stopOctop(a.cmd)
 	a.cmd = nil
 	a.mu.Unlock()
-	host, preferred := resolveListen()
+	host, configured := resolveListen()
+	preferred := a.preferredPort(host, configured)
 	if replaced {
 		// Runtime files on disk just changed; never attach to a stale process
 		// that still serves the previous code from memory.
@@ -206,19 +221,43 @@ func (a *App) boot() {
 		}
 		stopListeningOctop(host, preferred)
 	} else if existing := findRunningDashboard(host, preferred); existing != "" {
-		a.setStatus(desktopText(locale, copyStatusUsingExisting))
-		if err := waitHealth(locale, existing, 30*time.Second); err != nil {
-			a.setStatus(err.Error())
+		if dashboardIsCurrent(existing, portableVersion(root)) {
+			a.setStatus(desktopText(locale, copyStatusUsingExisting))
+			if err := waitHealth(locale, existing, 30*time.Second); err != nil {
+				a.setStatus(err.Error())
+				return
+			}
+			a.showDashboard(existing)
 			return
 		}
-		a.showDashboard(existing)
-		return
+		// Right port, wrong runtime: a 1.0.x process from an older shell, or a
+		// server that started before the portable was swapped. Reusing it keeps
+		// serving already-fixed bugs under a new UI, so restart it.
+		log.Printf(
+			"desktop: stale runtime on %s (running %q, portable %q); restarting",
+			existing,
+			dashboardVersion(existing),
+			portableVersion(root),
+		)
+		a.setStatus(desktopText(locale, copyStatusReplacingStale))
+		if port, ok := portFromDashboardURL(existing); ok {
+			stopListeningOctop(host, port)
+			// Restart on the same port so the origin (and the dashboard login)
+			// survives the swap.
+			preferred = port
+		}
 	}
-	port, err := chooseFreePort(host, preferred)
+	a.mu.Lock()
+	allowAlternate := a.alternatePort
+	a.mu.Unlock()
+	port, err := chooseStartPort(host, preferred, allowAlternate)
 	if err != nil {
+		var occupied portOccupiedError
 		var busy noFreePortError
 		var bind cannotBindError
 		switch {
+		case errors.As(err, &occupied):
+			a.reportPortOccupied(locale, occupied.Port)
 		case errors.As(err, &busy):
 			a.setStatus(desktopText(locale, copyErrorNoFreePort, busy.From, busy.To))
 		case errors.As(err, &bind):
@@ -229,6 +268,7 @@ func (a *App) boot() {
 		return
 	}
 	a.mu.Lock()
+	a.portBlocked = false
 	cmd, err := startOctop(root, port)
 	a.cmd = cmd
 	a.mu.Unlock()
@@ -249,7 +289,101 @@ func (a *App) boot() {
 		a.ownsListenPort = true
 		a.mu.Unlock()
 	}
+	a.rememberListenPort(port, configured)
 	a.showDashboard(base)
+}
+
+// preferredPort is the port to try first. Once the user accepted a port change
+// we stay on it while it is free: switching back would change the origin and
+// sign them out a second time.
+func (a *App) preferredPort(host string, configured int) int {
+	if a.store == nil {
+		return configured
+	}
+	saved := a.store.get().AlternatePort
+	if saved <= 0 || saved == configured {
+		return configured
+	}
+	if inUse, err := listenProbe(host, saved); err == nil && !inUse {
+		return saved
+	}
+	return configured
+}
+
+// rememberListenPort persists the port we actually started on when it differs
+// from config.json, so the next launch reuses the same origin.
+func (a *App) rememberListenPort(port, configured int) {
+	if a.store == nil || port == configured {
+		return
+	}
+	s := a.store.get()
+	if s.AlternatePort == port {
+		return
+	}
+	s.AlternatePort = port
+	if err := a.store.save(s); err != nil {
+		log.Printf("desktop: remember alternate port %d: %v", port, err)
+	}
+}
+
+// reportPortOccupied tells the user that another program owns the port and
+// surfaces the explicit "start on another port" action. It never moves ports
+// on its own: a different port is a different origin and signs the user out.
+func (a *App) reportPortOccupied(locale Locale, port int) {
+	msg := desktopText(locale, copyErrorPortOccupied, port)
+	log.Printf("desktop: %s", msg)
+	a.mu.Lock()
+	a.portBlocked = true
+	a.mu.Unlock()
+	a.setStatus(msg)
+	if a.app != nil {
+		a.app.Event.Emit("desktop:port-blocked", msg)
+	}
+}
+
+// IsPortBlocked reports whether the last boot stopped on a port conflict.
+func (a *App) IsPortBlocked() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.portBlocked
+}
+
+// RetryWithAlternatePort starts the service on the next free port. Only
+// reachable from the button shown after reportPortOccupied.
+func (a *App) RetryWithAlternatePort() bool {
+	a.mu.Lock()
+	if a.alternatePort {
+		a.mu.Unlock()
+		return false
+	}
+	a.alternatePort = true
+	a.mu.Unlock()
+	go a.boot()
+	return true
+}
+
+// legacyInstall caches the legacy 「猛犸AI」 lookup (mdfind is not cheap).
+func (a *App) legacyInstall() string {
+	a.legacyOnce.Do(func() { a.legacyApp = detectLegacySiblingInstall() })
+	return a.legacyApp
+}
+
+// GetLegacyInstall reports a second install with the same bundle id (legacy
+// 「猛犸AI」), or "" when there is only one. Read by the settings window.
+func (a *App) GetLegacyInstall() string { return a.legacyInstall() }
+
+// RevealLegacyInstall opens the file manager at the legacy app so the user can
+// remove it deliberately. The shell never deletes another app.
+func (a *App) RevealLegacyInstall() bool {
+	app := a.legacyInstall()
+	if app == "" {
+		return false
+	}
+	if err := revealInFileManager(app); err != nil {
+		log.Printf("desktop: reveal legacy install %s: %v", app, err)
+		return false
+	}
+	return true
 }
 
 func (a *App) showDashboard(base string) {

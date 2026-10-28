@@ -33,6 +33,10 @@
         document.getElementById("show-main").textContent = t.showMain;
         document.getElementById("quit").textContent = t.quit;
         document.getElementById("loading-hint").textContent = t.loadingHint;
+        document.getElementById("alt-port").textContent = t.altPort;
+        document.getElementById("l-legacy").textContent = t.legacyTitle;
+        document.getElementById("h-legacy").textContent = t.legacyHint;
+        document.getElementById("legacy-reveal").textContent = t.legacyReveal;
         applyWindowCopy(t);
       }
 
@@ -128,7 +132,38 @@
         document
           .getElementById("quit")
           .addEventListener("click", () => call("Quit"));
+
+        // Legacy 「猛犸AI」: only shown when a second install with the same
+        // bundle id is present. The app is never deleted from here.
+        const legacy = await call("GetLegacyInstall").catch(() => "");
+        if (legacy) {
+          document.getElementById("legacy-row").classList.remove("hidden");
+        }
+        document
+          .getElementById("legacy-reveal")
+          .addEventListener("click", () => call("RevealLegacyInstall"));
       }
+
+      // Port conflicts are the one case where the shell must not decide alone:
+      // another port is a different origin and would sign the user out.
+      const showAltPort = () => {
+        if (settingsMode) return;
+        document.getElementById("loading-panel").classList.remove("hidden");
+        document.getElementById("alt-port").classList.remove("hidden");
+      };
+      Events.On("desktop:port-blocked", showAltPort);
+      // The event is fire-and-forget; re-read the state so a reload still
+      // shows the button after boot already reported the conflict.
+      if (!settingsMode && (await call("IsPortBlocked").catch(() => false))) {
+        showAltPort();
+      }
+      document
+        .getElementById("alt-port")
+        .addEventListener("click", async (event) => {
+          const btn = event.currentTarget;
+          btn.classList.add("hidden");
+          await call("RetryWithAlternatePort").catch(() => {});
+        });
 
       Events.On("desktop:status", (ev) => {
         const msg =

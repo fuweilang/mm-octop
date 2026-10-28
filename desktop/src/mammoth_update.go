@@ -33,7 +33,7 @@ const (
 var desktopShellVersion = "0.0.0"
 
 type mammothLatestFile struct {
-	SchemaVersion int                             `json:"schema_version"`
+	SchemaVersion int                              `json:"schema_version"`
 	Platforms     map[string]mammothPlatformLatest `json:"platforms"`
 }
 
@@ -329,6 +329,8 @@ func (a *App) runMammothUpdate() {
 }
 
 func (a *App) hotRestartOctop(locale Locale, root, host string, preferred int) error {
+	configured := preferred
+	preferred = a.preferredPort(host, configured)
 	port, err := chooseFreePort(host, preferred)
 	if err != nil {
 		return err
@@ -352,6 +354,7 @@ func (a *App) hotRestartOctop(locale Locale, root, host string, preferred int) e
 		a.ownsListenPort = true
 		a.mu.Unlock()
 	}
+	a.rememberListenPort(port, configured)
 	a.showDashboard(base)
 	return nil
 }

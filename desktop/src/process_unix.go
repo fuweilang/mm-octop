@@ -53,3 +53,12 @@ func terminatePID(pid int) {
 	_ = syscall.Kill(-pid, syscall.SIGTERM)
 	_ = syscall.Kill(pid, syscall.SIGTERM)
 }
+
+// processCommandLine returns argv joined by spaces (macOS/Linux via ps).
+func processCommandLine(pid int) string {
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}

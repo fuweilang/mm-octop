@@ -59,6 +59,7 @@ func TestDesktopCopyCoversEveryGoKey(t *testing.T) {
 		copyStatusFirstExtract,
 		copyStatusUpdateFailedKeep,
 		copyStatusUsingExisting,
+		copyStatusReplacingStale,
 		copyStatusCheckingMammothUpdate,
 		copyStatusMammothUpToDate,
 		copyStatusMammothDownloading,
@@ -79,6 +80,9 @@ func TestDesktopCopyCoversEveryGoKey(t *testing.T) {
 		copyHealthNotReady5xx,
 		copyHealthNotReadyConnect,
 		copyHealthNotReady,
+		copyErrorPortOccupied,
+		copyWarnLegacyShell,
+		copyWarnLegacyAutostart,
 	}
 	for _, key := range goKeys {
 		for _, locale := range []Locale{LocaleZH, LocaleEN} {
@@ -112,6 +116,10 @@ func TestDesktopCopyCoversShellUIKeys(t *testing.T) {
 		"winMin",
 		"winMax",
 		"winClose",
+		"altPort",
+		"legacyTitle",
+		"legacyHint",
+		"legacyReveal",
 	}
 	for _, key := range shellKeys {
 		for _, locale := range []Locale{LocaleZH, LocaleEN} {

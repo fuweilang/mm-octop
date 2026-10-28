@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
+from octop import __version__
 from octop.api.deps import get_server
 
 router = APIRouter()
@@ -21,6 +22,10 @@ async def health(server: Any = Depends(get_server)) -> dict[str, Any]:
     )
     return {
         "ok": True,
+        # The desktop shell compares this with the portable tree on disk before
+        # reusing an already-running instance. 1.0.x builds omit the field, so a
+        # missing version counts as stale and the shell restarts the service.
+        "version": __version__,
         "started_at": server._started_at,
         "db": bound,
         "users_loaded": users,
