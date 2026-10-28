@@ -1,6 +1,8 @@
 import { Button, Result } from "antd";
 import { useTranslation } from "react-i18next";
+import { message } from "@/utils/antdMessage";
 import { OctopEmptyMascot } from "../EmptyState";
+import { saveBlobAsFile } from "../../utils/saveBlobAsFile";
 import {
   formatBootDiagnosticsText,
   type BootDiagnostics,
@@ -44,6 +46,17 @@ export default function BootOfflinePanel({
     }
   };
 
+  /** client-boot.jsonl (rotated + live) as a file the user can send us. */
+  const exportDiag = async () => {
+    try {
+      const res = await fetch("/api/client-log/export", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await saveBlobAsFile(await res.blob(), "octop-client-boot.jsonl");
+    } catch {
+      message.error(t("errors.exportDiagnosticsFailed"));
+    }
+  };
+
   return (
     <div role="alert" className={styles.wrap}>
       <Result
@@ -68,9 +81,22 @@ export default function BootOfflinePanel({
               <div className={styles.diag}>
                 <div className={styles.diagHeader}>
                   <span>{t("errors.offlineDiagnostics")}</span>
-                  <Button size="small" type="link" onClick={() => void copyDiag()}>
-                    {t("errors.copyDiagnostics")}
-                  </Button>
+                  <span className={styles.diagActions}>
+                    <Button
+                      size="small"
+                      type="link"
+                      onClick={() => void copyDiag()}
+                    >
+                      {t("errors.copyDiagnostics")}
+                    </Button>
+                    <Button
+                      size="small"
+                      type="link"
+                      onClick={() => void exportDiag()}
+                    >
+                      {t("errors.exportDiagnostics")}
+                    </Button>
+                  </span>
                 </div>
                 <pre className={styles.diagBody}>{diagText}</pre>
               </div>

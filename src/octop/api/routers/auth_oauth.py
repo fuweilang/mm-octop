@@ -109,6 +109,31 @@ async def mammoth_console_link(
     return {"url": url}
 
 
+@router.get(
+    "/mammoth/console-token",
+    summary="Bearer token for 中台 console API (desktop)",
+    response_model=None,
+)
+async def mammoth_console_token(
+    user: User = Depends(current_user),
+    server: Any = Depends(get_server),
+) -> dict[str, Any]:
+    """Hand the local dashboard the 中台 handoff token.
+
+    MAMMOTH-PATCH: 桌面端控制台 401. Calls to ``www.mmai.vip/console/api`` from
+    ``127.0.0.1:8088`` are cross-site, so the 中台 cookie (SameSite=Lax) is not
+    sent and every request 401s. The dashboard uses this token as
+    ``Authorization: Bearer`` instead. The token is returned to the caller only
+    and never written to a log.
+    """
+    try:
+        token = _service(server).console_bearer_token(user.id)
+    except ValueError as exc:
+        logger.info("console-token unavailable: %s", exc)
+        raise OctopError(ErrorCode.TOKEN_EXPIRED, "console token unavailable") from exc
+    return {"token": token}
+
+
 class RefreshProfileBody(BaseModel):
     display_name: str = Field(min_length=1, max_length=80)
 

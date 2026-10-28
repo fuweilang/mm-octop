@@ -303,6 +303,25 @@
         background: var(--bg-primary);
         color: var(--text-primary);
       }
+      .legacy-info {
+        min-width: 0;
+      }
+      .legacy-actions {
+        display: flex;
+        flex-shrink: 0;
+        gap: 6px;
+      }
+      /* Removing another app is destructive-ish: keep it visibly different
+         from the neutral row actions. */
+      .row-action.primary {
+        color: #b91c1c;
+        background: #fef2f2;
+        border-color: #fecaca;
+      }
+      .row-action.primary:hover {
+        color: #991b1b;
+        background: #fee2e2;
+      }
       .alt-port {
         align-self: center;
         padding: 7px 14px;

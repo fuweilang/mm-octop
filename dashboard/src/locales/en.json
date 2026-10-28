@@ -6957,7 +6957,9 @@
     "startingLocalTitle": "Starting local service…",
     "startingLocalSubtitle": "The local backend is still initializing (this is not a network failure). Retrying automatically; you can also retry manually.",
     "offlineDiagnostics": "Boot diagnostics (copyable)",
-    "copyDiagnostics": "Copy"
+    "copyDiagnostics": "Copy",
+    "exportDiagnostics": "Export log file",
+    "exportDiagnosticsFailed": "Export failed, please try again"
   },
   "adminProviders": {
     "title": "Providers",

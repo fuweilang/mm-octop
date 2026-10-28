@@ -34,11 +34,15 @@
         document.getElementById("quit").textContent = t.quit;
         document.getElementById("loading-hint").textContent = t.loadingHint;
         document.getElementById("alt-port").textContent = t.altPort;
-        document.getElementById("l-legacy").textContent = t.legacyTitle;
-        document.getElementById("h-legacy").textContent = t.legacyHint;
-        document.getElementById("legacy-reveal").textContent = t.legacyReveal;
+        shellCopy = t;
+        document.getElementById("legacy-check").textContent = t.legacyCheck;
+        document.getElementById("legacy-remove").textContent = t.legacyTrash;
+        document.getElementById("legacy-later").textContent = t.legacyLater;
         applyWindowCopy(t);
       }
+
+      /** Copy table of the active locale; set by applyCopy. */
+      let shellCopy = copy.en;
 
       function emitWindowAction(action) {
         const invoke = window._wails?.invoke;
@@ -133,15 +137,73 @@
           .getElementById("quit")
           .addEventListener("click", () => call("Quit"));
 
-        // Legacy 「猛犸AI」: only shown when a second install with the same
-        // bundle id is present. The app is never deleted from here.
-        const legacy = await call("GetLegacyInstall").catch(() => "");
-        if (legacy) {
-          document.getElementById("legacy-row").classList.remove("hidden");
+        // Legacy 「猛犸AI」: one row with two states. Removal is always explicit —
+        // the shell never deletes another app on its own.
+        const legacyRow = document.getElementById("legacy-row");
+        const legacyActions = document.getElementById("legacy-actions");
+        const legacyCheckBtn = document.getElementById("legacy-check");
+        const legacyStatus = document.getElementById("settings-status");
+        const renderLegacy = (path) => {
+          const found = !!path;
+          document.getElementById("l-legacy").textContent = found
+            ? shellCopy.legacyTitle
+            : shellCopy.legacyCheckLabel;
+          document.getElementById("h-legacy").textContent = found
+            ? shellCopy.legacyHint
+            : shellCopy.legacyCheckHint;
+          legacyActions.classList.toggle("hidden", !found);
+          legacyCheckBtn.classList.toggle("hidden", found);
+          legacyRow.classList.toggle("legacy-found", found);
+        };
+        const showLegacyStatus = (text) => {
+          if (!text) return;
+          legacyStatus.textContent = text;
+          legacyStatus.classList.remove("hidden");
+        };
+        let legacyPath = "";
+        try {
+          const report = await call("CheckLegacyApp");
+          legacyPath = report?.path || "";
+        } catch {
+          legacyPath = "";
         }
+        renderLegacy(legacyPath);
+        Events.On("desktop:legacy-app", (ev) => {
+          const path =
+            typeof ev === "string"
+              ? ev
+              : ev?.data ?? ev?.payload ?? String(ev ?? "");
+          if (path) {
+            legacyPath = String(path);
+            renderLegacy(legacyPath);
+          }
+        });
+        legacyCheckBtn.addEventListener("click", async () => {
+          const report = await call("CheckLegacyApp").catch(() => null);
+          legacyPath = report?.path || "";
+          renderLegacy(legacyPath);
+        });
         document
-          .getElementById("legacy-reveal")
-          .addEventListener("click", () => call("RevealLegacyInstall"));
+          .getElementById("legacy-remove")
+          .addEventListener("click", async () => {
+            const reason = await call("RemoveLegacyApp").catch(() => "");
+            if (!reason) {
+              renderLegacy("");
+              showLegacyStatus(shellCopy.legacyRemoved);
+              return;
+            }
+            // The shell could not do it: reveal the app so the user can finish
+            // by hand, and say why.
+            await call("OpenLegacyAppFolder").catch(() => {});
+            showLegacyStatus(shellCopy[reason] || reason);
+          });
+        document
+          .getElementById("legacy-later")
+          .addEventListener("click", async () => {
+            await call("DismissLegacyApp").catch(() => {});
+            renderLegacy("");
+            showLegacyStatus(shellCopy.legacyDeferred);
+          });
       }
 
       // Port conflicts are the one case where the shell must not decide alone:

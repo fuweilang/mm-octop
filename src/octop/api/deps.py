@@ -40,6 +40,8 @@ _JWT_EXEMPT_PREFIXES = (
 )
 _JWT_EXEMPT_EXACT = (
     "/api/health",
+    # Boot diagnostics: the shell reports before anyone signs in (rate-limited).
+    "/api/client-log",
     "/api/auth/login",
     "/api/auth/captcha",
     "/api/auth/oidc/status",

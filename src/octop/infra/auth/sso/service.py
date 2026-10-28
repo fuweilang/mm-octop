@@ -47,6 +47,23 @@ logger = logging.getLogger(__name__)
 _DESKTOP_OIDC_ISSUER_ENV = "OCTOP_MAMMOTH_OIDC_ISSUER"
 
 
+def _jwt_expired(token: str) -> bool:
+    """True when the handoff token carries an ``exp`` in the past.
+
+    Signature verification belongs to the 中台; here we only skip a token we
+    already know is dead so the dashboard gets a fast 401 instead of a round
+    trip that fails anyway.
+    """
+    try:
+        claims = jwt.decode(token, options={"verify_signature": False})
+    except jwt.PyJWTError:
+        return False
+    exp = claims.get("exp") if isinstance(claims, dict) else None
+    if not isinstance(exp, int | float):
+        return False
+    return float(exp) <= time.time()
+
+
 def desktop_oidc_issuer() -> str:
     return os.environ.get(_DESKTOP_OIDC_ISSUER_ENV, "").strip().rstrip("/")
 
@@ -401,7 +418,9 @@ class SsoService:
         params = {"code": login_code, "redirect": login_state.redirect_after}
         if login_state.user_id is not None:
             params["bind"] = "1"
-        return RedirectResult(f"{_with_agent_prefix(frontend)}/login/oidc/complete#{urlencode(params)}")
+        return RedirectResult(
+            f"{_with_agent_prefix(frontend)}/login/oidc/complete#{urlencode(params)}"
+        )
 
     async def exchange_login_code(self, code: str) -> User:
         consumed = self._services.sso_repo.consume_login_code(code)
@@ -581,6 +600,22 @@ class SsoService:
             return
         self._services.settings_repo.set(_CONSOLE_HANDOFF_SETTING.format(user_id=user_id), token)
 
+    def console_bearer_token(self, user_id: int) -> str:
+        """Handoff token for Bearer calls to the 中台 API.
+
+        MAMMOTH-PATCH: 桌面端控制台 401. The dashboard runs on 127.0.0.1, so the
+        中台 cookie (SameSite=Lax) is never sent cross-site; Bearer is the only
+        credential that survives. The token is never logged.
+        """
+        token = (
+            self._services.settings_repo.get(_CONSOLE_HANDOFF_SETTING.format(user_id=user_id)) or ""
+        ).strip()
+        if not token:
+            raise ValueError("console handoff token is missing")
+        if _jwt_expired(token):
+            raise ValueError("console handoff token expired")
+        return token
+
     def console_handoff_url(self, user_id: int) -> str:
         """Mint a Chrome login URL for the current Octop user. Client identity wins."""
         origin = desktop_platform_origin()
@@ -608,8 +643,7 @@ class SsoService:
         if next_path == "/console":
             next_path = "/console/"
         return (
-            f"{origin}/login?sso={quote(ticket.strip(), safe='')}"
-            f"&next={quote(next_path, safe='')}"
+            f"{origin}/login?sso={quote(ticket.strip(), safe='')}&next={quote(next_path, safe='')}"
         )
 
     async def login_with_platform_password(

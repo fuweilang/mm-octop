@@ -174,15 +174,21 @@
               <span></span>
             </label>
           </div>
-          <div class="row hidden" id="legacy-row">
-            <div>
-              <div class="label" id="l-legacy">旧版「猛犸AI」</div>
-              <small id="h-legacy"
-                >检测到仍安装，旧版会抢先占用 8088。建议卸载旧版。</small
-              >
+          <div class="row" id="legacy-row">
+            <div class="legacy-info">
+              <div class="label" id="l-legacy">旧版 App</div>
+              <small id="h-legacy">检查是否还装着旧版「猛犸AI」</small>
             </div>
-            <button class="row-action" id="legacy-reveal" type="button">
-              定位旧版
+            <div class="legacy-actions hidden" id="legacy-actions">
+              <button class="row-action primary" id="legacy-remove" type="button">
+                移到废纸篓
+              </button>
+              <button class="row-action" id="legacy-later" type="button">
+                稍后再处理
+              </button>
+            </div>
+            <button class="row-action" id="legacy-check" type="button">
+              检查旧版
             </button>
           </div>
         </div>

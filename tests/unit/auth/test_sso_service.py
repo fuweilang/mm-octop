@@ -513,9 +513,7 @@ async def test_desktop_password_login_finishes_without_browser_redirect(
     assert "GET /console/api/oidc/authorize" in seen
     consumed = service._services.sso_repo.consume_login_code(code)
     assert consumed is not None
-    stored = service._services.settings_repo.get(
-        f"mammoth.console_handoff.{consumed['user_id']}"
-    )
+    stored = service._services.settings_repo.get(f"mammoth.console_handoff.{consumed['user_id']}")
     assert stored == "handoff-tok"
 
 
@@ -541,7 +539,6 @@ def test_desktop_password_login_rejects_bad_credentials(
         )
 
 
-
 def test_merge_userinfo_claims_overlays_rbac_fields(service: SsoService) -> None:
     claims = {"sub": "u1", "permissions": ["experts"]}
     token = {"access_token": "atk", "id_token": "ignored"}
@@ -561,9 +558,7 @@ def test_merge_userinfo_claims_overlays_rbac_fields(service: SsoService) -> None
         )
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        service._merge_userinfo_claims(
-            claims, token=token, discovery=discovery, client=client
-        )
+        service._merge_userinfo_claims(claims, token=token, discovery=discovery, client=client)
     assert claims["permissions"] == ["experts", "portal.admin.access", "providers"]
     assert claims["platform_role"] == "platform_admin"
     assert claims["is_platform_admin"] is True
@@ -580,3 +575,20 @@ def test_merge_userinfo_claims_skips_without_access_token(service: SsoService) -
             client=client,
         )
     assert "permissions" not in claims
+
+
+def test_console_bearer_token_returns_stored_handoff(service: SsoService) -> None:
+    service._services.settings_repo.set("mammoth.console_handoff.7", "handoff-tok")
+    assert service.console_bearer_token(7) == "handoff-tok"
+
+
+def test_console_bearer_token_missing_raises(service: SsoService) -> None:
+    with pytest.raises(ValueError, match="missing"):
+        service.console_bearer_token(7)
+
+
+def test_console_bearer_token_expired_raises(service: SsoService) -> None:
+    expired = jwt.encode({"exp": int(time.time()) - 60}, "secret", algorithm="HS256")
+    service._services.settings_repo.set("mammoth.console_handoff.7", expired)
+    with pytest.raises(ValueError, match="expired"):
+        service.console_bearer_token(7)

@@ -49,7 +49,6 @@ type App struct {
 	// (the event is fire-and-forget).
 	portBlocked    bool
 	portBlockedMsg string
-	legacyOnce     sync.Once
 	legacyApp      string
 }
 
@@ -189,6 +188,7 @@ func (a *App) boot() {
 	if a.store != nil {
 		locale = a.store.get().Locale
 	}
+	recordBoot("shell_start", "", nil)
 	if url := os.Getenv("OCTOP_DESKTOP_URL"); url != "" {
 		a.setStatus(desktopText(locale, copyStatusConnecting))
 		if err := waitHealth(locale, url, 3*time.Minute); err != nil {
@@ -198,17 +198,9 @@ func (a *App) boot() {
 		a.showDashboard(url)
 		return
 	}
-	if legacy := a.legacyInstall(); legacy != "" {
-		warn := desktopText(locale, copyWarnLegacyShell)
-		// Stop the legacy login item automatically; the app itself is left in
-		// place so the user can remove it deliberately.
-		if moved := disableLegacyAutostart(legacy); len(moved) > 0 {
-			log.Printf("desktop: moved legacy autostart entries to %s", strings.Join(moved, ", "))
-			warn = desktopText(locale, copyWarnLegacyAutostart)
-		}
-		log.Printf("desktop: %s (%s)", warn, legacy)
-		a.setStatus(warn)
-	}
+	// Legacy 「猛犸AI」 lives on another goroutine: Spotlight/registry lookups and
+	// the removal prompt must never delay startup.
+	go a.promptLegacyApp()
 	a.setStatus(desktopText(locale, copyStatusCheckingRuntime))
 	replaced, err := ensurePortable(locale, a.setStatus)
 	if err != nil {
@@ -263,6 +255,8 @@ func (a *App) boot() {
 			if hasPort && keepAlternate {
 				a.rememberListenPort(runningPort, configured)
 			}
+			recordBoot("attach_existing", "", nil)
+			go uploadBootLog(existing)
 			a.showDashboard(existing)
 			return
 		}
@@ -320,10 +314,13 @@ func (a *App) boot() {
 			a.reportPortOccupied(locale, occupied.Port)
 		case errors.As(err, &busy):
 			a.setStatus(desktopText(locale, copyErrorNoFreePort, busy.From, busy.To))
+			recordBoot("no_free_port", err.Error(), nil)
 		case errors.As(err, &bind):
 			a.setStatus(desktopText(locale, copyErrorCannotBind, bind.Host, bind.Port, bind.Err.Error()))
+			recordBoot("cannot_bind", err.Error(), nil)
 		default:
 			a.setStatus(err.Error())
+			recordBoot("start_failed", err.Error(), nil)
 		}
 		// Release the one-shot flag so the button keeps working after a retry
 		// that also failed.
@@ -341,12 +338,14 @@ func (a *App) boot() {
 	a.mu.Unlock()
 	if err != nil {
 		a.setStatus(err.Error())
+		recordBoot("service_start_failed", err.Error(), nil)
 		return
 	}
 	base := dashboardURL(host, port)
 	a.setStatus(desktopText(locale, copyStatusStartingService))
 	if err := waitHealth(locale, base, 2*time.Minute); err != nil {
 		a.setStatus(err.Error())
+		recordBoot("health_timeout", err.Error(), nil)
 		return
 	}
 	if err := writeDesktopPort(port); err != nil {
@@ -359,6 +358,8 @@ func (a *App) boot() {
 	if keepAlternate {
 		a.rememberListenPort(port, configured)
 	}
+	recordBoot("ready", "", nil)
+	go uploadBootLog(base)
 	a.showDashboard(base)
 }
 
@@ -433,6 +434,7 @@ func (a *App) rememberListenPort(port, configured int) {
 func (a *App) reportPortOccupied(locale Locale, port int) {
 	msg := desktopText(locale, copyErrorPortOccupied, port)
 	log.Printf("desktop: %s", msg)
+	recordBoot("port_occupied", msg, nil)
 	a.mu.Lock()
 	a.portBlocked = true
 	a.portBlockedMsg = msg
@@ -472,29 +474,8 @@ func (a *App) RetryWithAlternatePort() bool {
 	return true
 }
 
-// legacyInstall caches the legacy 「猛犸AI」 lookup (mdfind is not cheap).
-func (a *App) legacyInstall() string {
-	a.legacyOnce.Do(func() { a.legacyApp = detectLegacySiblingInstall() })
-	return a.legacyApp
-}
-
-// GetLegacyInstall reports a second install with the same bundle id (legacy
-// 「猛犸AI」), or "" when there is only one. Read by the settings window.
-func (a *App) GetLegacyInstall() string { return a.legacyInstall() }
-
-// RevealLegacyInstall opens the file manager at the legacy app so the user can
-// remove it deliberately. The shell never deletes another app.
-func (a *App) RevealLegacyInstall() bool {
-	app := a.legacyInstall()
-	if app == "" {
-		return false
-	}
-	if err := revealInFileManager(app); err != nil {
-		log.Printf("desktop: reveal legacy install %s: %v", app, err)
-		return false
-	}
-	return true
-}
+// legacyInstall is the path detected during boot (async, see promptLegacyApp).
+func (a *App) legacyInstall() string { return a.legacyAppPath() }
 
 func (a *App) showDashboard(base string) {
 	if a.window == nil {

@@ -6957,7 +6957,9 @@
     "startingLocalTitle": "正在启动本地服务…",
     "startingLocalSubtitle": "本机后端仍在初始化（并非网络不可用）。完成后会自动重试，也可手动重试。",
     "offlineDiagnostics": "启动诊断（可复制）",
-    "copyDiagnostics": "复制"
+    "copyDiagnostics": "复制",
+    "exportDiagnostics": "导出日志文件",
+    "exportDiagnosticsFailed": "导出失败，请重试"
   },
   "adminProviders": {
     "title": "Providers",

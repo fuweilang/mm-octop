@@ -44,6 +44,9 @@ def test_exempt_paths() -> None:
     assert is_jwt_exempt_path("/api/auth/oauth/exchange")
     assert is_jwt_exempt_path("/api/auth/mammoth/desktop-login")
     assert is_jwt_exempt_path("/api/auth/mammoth/desktop-register")
+    # Boot diagnostics arrive before anyone signs in; the route rate-limits.
+    assert is_jwt_exempt_path("/api/client-log")
+    assert not is_jwt_exempt_path("/api/client-log/export")
     assert is_jwt_exempt_path("/api/auth/invite/validate")
     assert is_jwt_exempt_path("/api/auth/invite/redeem")
     assert is_jwt_exempt_path("/api/docs")

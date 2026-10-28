@@ -56,7 +56,16 @@
     "altPort": "换端口启动（需重新登录）",
     "legacyTitle": "旧版「猛犸AI」",
     "legacyHint": "检测到仍安装，旧版会抢先占用 8088。建议卸载旧版。",
-    "legacyReveal": "定位旧版"
+    "legacyReveal": "定位旧版",
+    "error.legacy_manual": "无法自动移除旧版「猛犸AI」，已打开所在文件夹，请手动移到废纸篓。",
+    "error.legacy_self": "检测到的是当前正在使用的 App，已跳过，未做任何删除。",
+    "legacyTrash": "移到废纸篓",
+    "legacyLater": "稍后再处理",
+    "legacyCheck": "检查旧版",
+    "legacyCheckHint": "检查是否还装着旧版「猛犸AI」",
+    "legacyCheckLabel": "旧版 App",
+    "legacyRemoved": "旧版「猛犸AI」已移到废纸篓。",
+    "legacyDeferred": "已记下，本次不再提示。可随时点「检查旧版」。"
   },
   "en": {
     "status.connecting": "Connecting to 猛犸AI…",
@@ -115,6 +124,15 @@
     "altPort": "Start on another port (sign-in required)",
     "legacyTitle": "Legacy 猛犸AI",
     "legacyHint": "Still installed and able to grab port 8088. Removing it avoids conflicts.",
-    "legacyReveal": "Show legacy app"
+    "legacyReveal": "Show legacy app",
+    "error.legacy_manual": "Could not remove the old 猛犸AI automatically. Its folder is open; please drag it to the Trash.",
+    "error.legacy_self": "That is the app you are running now. Nothing was removed.",
+    "legacyTrash": "Move to Trash",
+    "legacyLater": "Later",
+    "legacyCheck": "Check again",
+    "legacyCheckHint": "Check whether the old 猛犸AI is still installed",
+    "legacyCheckLabel": "Old app",
+    "legacyRemoved": "The old 猛犸AI was moved to the Trash.",
+    "legacyDeferred": "Noted. You can run “Check again” any time."
   }
 }

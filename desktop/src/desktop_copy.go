@@ -43,6 +43,8 @@ const (
 	copyHealthNotReady              = "health.not_ready"
 	copyWarnLegacyShell             = "warn.legacy_shell"
 	copyWarnLegacyAutostart         = "warn.legacy_autostart"
+	copyLegacyManual                = "error.legacy_manual"
+	copyLegacySelf                  = "error.legacy_self"
 )
 
 // assets/copy.json is the single source for desktop shell copy: this Go side
