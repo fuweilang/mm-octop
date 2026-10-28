@@ -215,14 +215,11 @@ func (a *App) boot() {
 	a.mu.Unlock()
 	host, configured := resolveListen()
 	preferred := a.preferredPort(host, configured)
-	// Probe both the port we would use and the configured one. Looking only at
-	// `preferred` lets a remembered alternate hide an instance already running
-	// on the configured port, and two Octop processes would share one ~/.octop
+	// Probe every port we may already own, not just `preferred`: looking only
+	// at it lets a remembered (or busy) alternate hide an instance already
+	// running elsewhere, and two Octop processes would share one ~/.octop
 	// SQLite.
-	candidates := []int{preferred}
-	if configured != preferred {
-		candidates = append(candidates, configured)
-	}
+	candidates := a.candidatePorts(preferred, configured)
 	existing := ""
 	for _, candidate := range candidates {
 		if found := findRunningDashboard(host, candidate); found != "" {
@@ -233,24 +230,25 @@ func (a *App) boot() {
 	if replaced {
 		// Runtime files on disk just changed; never attach to a stale process
 		// that still serves the previous code from memory.
-		if saved, ok := readDesktopPort(); ok {
-			stopListeningOctop(host, saved)
-		}
 		for _, candidate := range candidates {
 			stopListeningOctop(host, candidate)
 		}
 	} else if existing != "" {
-		runningPort, _ := portFromDashboardURL(existing)
+		runningPort, hasPort := portFromDashboardURL(existing)
 		if dashboardIsCurrent(existing, portableVersion(root)) {
 			a.setStatus(desktopText(locale, copyStatusUsingExisting))
 			if err := waitHealth(locale, existing, 30*time.Second); err != nil {
 				a.setStatus(err.Error())
 				return
 			}
-			// Only one instance may serve ~/.octop; drop the other candidate.
-			for _, candidate := range candidates {
-				if candidate != runningPort {
-					stopListeningOctop(host, candidate)
+			// Only one instance may serve ~/.octop; drop an instance of ours on
+			// another candidate. A service that merely happens to be an Octop
+			// (docker proxy, dev venv) is left alone.
+			if hasPort {
+				for _, candidate := range candidates {
+					if candidate != runningPort && portRunsFrom(candidate, root) {
+						stopListeningOctop(host, candidate)
+					}
 				}
 			}
 			a.rememberListenPort(runningPort, configured)
@@ -267,11 +265,19 @@ func (a *App) boot() {
 			portableVersion(root),
 		)
 		a.setStatus(desktopText(locale, copyStatusReplacingStale))
-		if runningPort > 0 {
+		if hasPort {
 			stopListeningOctop(host, runningPort)
 			// Restart on the same port so the origin (and the dashboard login)
 			// survives the swap.
 			preferred = runningPort
+		}
+	} else {
+		// No healthy instance anywhere: whatever still holds these ports is a
+		// half-started leftover of ours. Clear it now so a stale python is not
+		// mistaken for a third-party program below. Foreign listeners are
+		// never touched by stopListeningOctop.
+		for _, candidate := range candidates {
+			stopListeningOctop(host, candidate)
 		}
 	}
 	a.mu.Lock()
@@ -313,6 +319,7 @@ func (a *App) boot() {
 	a.mu.Lock()
 	a.portBlocked = false
 	a.portBlockedMsg = ""
+	a.alternatePort = false
 	cmd, err := startOctop(root, port)
 	a.cmd = cmd
 	a.mu.Unlock()
@@ -335,6 +342,33 @@ func (a *App) boot() {
 	}
 	a.rememberListenPort(port, configured)
 	a.showDashboard(base)
+}
+
+// candidatePorts lists the ports an instance of ours may already be on: the
+// port we would use, the configured one, the alternate the user accepted, and
+// the port recorded for the running instance.
+func (a *App) candidatePorts(preferred, configured int) []int {
+	ports := make([]int, 0, 4)
+	add := func(port int) {
+		if port < 1 || port > 65535 {
+			return
+		}
+		for _, existing := range ports {
+			if existing == port {
+				return
+			}
+		}
+		ports = append(ports, port)
+	}
+	add(preferred)
+	add(configured)
+	if a.store != nil {
+		add(a.store.get().AlternatePort)
+	}
+	if saved, ok := readDesktopPort(); ok {
+		add(saved)
+	}
+	return ports
 }
 
 // preferredPort is the port to try first. Once the user accepted a port change

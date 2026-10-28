@@ -394,6 +394,17 @@ func TestRetryWithAlternatePortIsOneShot(t *testing.T) {
 	}
 }
 
+func TestPortRunsFromIgnoresForeignListener(t *testing.T) {
+	t.Setenv("OCTOP_HOME", t.TempDir())
+	srv := httptest.NewServer(http.NotFoundHandler())
+	defer srv.Close()
+	port := srv.Listener.Addr().(*net.TCPAddr).Port
+
+	if portRunsFrom(port, portableDir()) {
+		t.Fatal("a listener outside the portable tree must not be treated as ours")
+	}
+}
+
 func freeTCPPort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

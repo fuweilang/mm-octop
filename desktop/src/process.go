@@ -213,7 +213,8 @@ func chooseFreePort(host string, start int) (int, error) {
 // chooseStartPort prefers the configured port. When another program owns it we
 // stop instead of silently shifting to 8089+: the dashboard login lives in
 // localStorage, which is keyed by origin, so a port change signs the user out.
-// “allowAlternate“ is only set after the user clicks the explicit button.
+// “allowAlternate“ is set by the explicit "start on another port" button (and
+// by the update restart, which must not be blocked by a port conflict).
 func chooseStartPort(host string, preferred int, allowAlternate bool) (int, error) {
 	inUse, err := listenProbe(host, preferred)
 	if err != nil {
@@ -415,4 +416,20 @@ func processRunsFrom(pid int, dir string) bool {
 	return strings.Contains(command, needle+strings.ToLower(string(os.PathSeparator))) ||
 		strings.Contains(command, needle+"/") ||
 		strings.Contains(command, needle+"\\")
+}
+
+// portRunsFrom reports whether every process listening on port was started
+// from dir. Used before cleaning one of our own candidate ports so a service
+// that merely happens to be an Octop (docker proxy, dev checkout) is left alone.
+func portRunsFrom(port int, dir string) bool {
+	pids := listeningPIDs(port)
+	if len(pids) == 0 {
+		return false
+	}
+	for _, pid := range pids {
+		if !processRunsFrom(pid, dir) {
+			return false
+		}
+	}
+	return true
 }

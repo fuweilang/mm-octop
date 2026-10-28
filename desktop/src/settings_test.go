@@ -23,6 +23,48 @@ func TestLoadSettingsMigratesLegacyPreventSleepMac(t *testing.T) {
 	}
 }
 
+func TestCandidatePortsIncludeBusyStoredAlternate(t *testing.T) {
+	t.Setenv("OCTOP_HOME", t.TempDir())
+	store := &settingsStore{cur: loadSettings()}
+	app := &App{store: store}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	alternate := ln.Addr().(*net.TCPAddr).Port
+	saved := store.get()
+	saved.AlternatePort = alternate
+	if err := store.save(saved); err != nil {
+		t.Fatal(err)
+	}
+
+	// The alternate is busy, so preferredPort falls back to the configured
+	// port. The candidate list must still contain the alternate, otherwise its
+	// leftover instance is never found and cleaned (8088 + 8089 double-run).
+	preferred := app.preferredPort("127.0.0.1", 8088)
+	if preferred != 8088 {
+		t.Fatalf("preferred = %d, want 8088", preferred)
+	}
+	ports := app.candidatePorts(preferred, 8088)
+	for _, port := range ports {
+		if port == alternate {
+			return
+		}
+	}
+	t.Fatalf("candidates %v must include the stored alternate %d", ports, alternate)
+}
+
+func TestCandidatePortsDedupe(t *testing.T) {
+	t.Setenv("OCTOP_HOME", t.TempDir())
+	app := &App{store: &settingsStore{cur: loadSettings()}}
+
+	ports := app.candidatePorts(8088, 8088)
+	if len(ports) != 1 || ports[0] != 8088 {
+		t.Fatalf("candidates = %v, want [8088]", ports)
+	}
+}
+
 func TestPreferredPortKeepsAcceptedAlternate(t *testing.T) {
 	t.Setenv("OCTOP_HOME", t.TempDir())
 	store := &settingsStore{cur: loadSettings()}
