@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent,
+} from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -37,10 +43,14 @@ import {
 import { sectionsFromLayout, type SidebarNavLayout } from "./sidebarNavLayout";
 import SidebarNavCustomizer from "./SidebarNavCustomizer";
 import ClientDownloadLink from "./ClientDownloadLink";
+import ProductSwitcher from "./ProductSwitcher";
 import styles from "./Sidebar.module.less";
 import { typeSize } from "../utils/mobileTypeScale";
 import { useDesktopChromeStyle } from "../hooks/useDesktopChrome";
-import { DESKTOP_DRAG_REGION_CLASS, isDesktopShell } from "../utils/desktopChrome";
+import {
+  DESKTOP_DRAG_REGION_CLASS,
+  isDesktopShell,
+} from "../utils/desktopChrome";
 
 const NAV_GROUPS_STORAGE_KEY = "octop:sidebar-nav-groups";
 const LEGACY_COLLAPSED_GROUP_IDS: Record<string, string> = {
@@ -510,40 +520,56 @@ export default function Sidebar({
 
   const brandInner = (
     <>
-      <img
-        src={isRailCollapsed ? `${import.meta.env.BASE_URL}pwa-192.png` : wordmarkSrc}
-        alt="猛犸AI"
-        style={{
-          height: isRailCollapsed ? 32 : isMobile ? 38 : 36,
-          width: isRailCollapsed ? 32 : "auto",
-          maxWidth: isRailCollapsed ? 32 : isMobile ? 190 : 160,
-          objectFit: "contain",
-          display: "block",
-          flexShrink: 0,
-          borderRadius: isRailCollapsed ? 8 : undefined,
-        }}
-      />
-      {!isRailCollapsed && !isMobile && (
-        <>
-          <CurrentVersionBadge isMobile={isMobile} />
-          <AppVersionBadge isMobile={isMobile} />
-        </>
-      )}
+      <div className={styles.brandMain}>
+        <img
+          src={
+            isRailCollapsed
+              ? `${import.meta.env.BASE_URL}pwa-192.png`
+              : wordmarkSrc
+          }
+          alt="猛犸AI"
+          style={{
+            height: isRailCollapsed ? 32 : isMobile ? 38 : 36,
+            width: isRailCollapsed ? 32 : "auto",
+            maxWidth: isRailCollapsed ? 32 : isMobile ? 168 : 132,
+            objectFit: "contain",
+            display: "block",
+            flexShrink: 0,
+            borderRadius: isRailCollapsed ? 8 : undefined,
+          }}
+        />
+        {!isRailCollapsed && !isMobile && (
+          <>
+            <CurrentVersionBadge isMobile={isMobile} />
+            <AppVersionBadge isMobile={isMobile} />
+          </>
+        )}
+      </div>
+      {!isRailCollapsed && <ProductSwitcher />}
     </>
   );
 
   const middleOfficeLabel = t("nav.middle", "中台");
   const middleOfficeIcon = <LayoutDashboard size={16} strokeWidth={1.8} />;
 
-  const openEnterpriseConsole = useCallback(async (event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault();
-    const { openEnterpriseConsoleFromClient } = await import("../utils/mammothSso");
-    try {
-      window.open(await openEnterpriseConsoleFromClient(), "_blank", "noopener");
-    } catch {
-      message.error(t("errors.consoleHandoffFailed"));
-    }
-  }, [t]);
+  const openEnterpriseConsole = useCallback(
+    async (event: MouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+      const { openEnterpriseConsoleFromClient } = await import(
+        "../utils/mammothSso"
+      );
+      try {
+        window.open(
+          await openEnterpriseConsoleFromClient(),
+          "_blank",
+          "noopener",
+        );
+      } catch {
+        message.error(t("errors.consoleHandoffFailed"));
+      }
+    },
+    [t],
+  );
 
   const middleOfficeLink = isRailCollapsed ? (
     <Tooltip title={middleOfficeLabel} placement="right" mouseEnterDelay={0.2}>
@@ -575,20 +601,21 @@ export default function Sidebar({
         padding: isRailCollapsed ? "10px 0" : "10px 12px",
         display: "flex",
         flexDirection: "column",
-        gap: 2,
         justifyContent: isRailCollapsed ? "center" : "stretch",
       }}
     >
       {middleOfficeLink}
       {!isDesktopShell() && <ClientDownloadLink compact={isRailCollapsed} />}
-      <AvatarDropdown
-        user={user}
-        onUserChange={setUser}
-        placement="sidebar"
-        compact={isRailCollapsed}
-        onBeforeOpenSettings={isMobile && !collapsed ? onToggle : undefined}
-        onCustomizeNav={() => setCustomizerOpen(true)}
-      />
+      <div className={styles.accountBlock}>
+        <AvatarDropdown
+          user={user}
+          onUserChange={setUser}
+          placement="sidebar"
+          compact={isRailCollapsed}
+          onBeforeOpenSettings={isMobile && !collapsed ? onToggle : undefined}
+          onCustomizeNav={() => setCustomizerOpen(true)}
+        />
+      </div>
     </div>
   );
 
@@ -855,8 +882,8 @@ export default function Sidebar({
               ? "36px 0 12px"
               : "12px 0"
             : macLights
-              ? "10px 14px 10px var(--window-controls-inset-start, 80px)"
-              : "14px 14px 10px",
+            ? "10px 14px 10px var(--window-controls-inset-start, 80px)"
+            : "14px 14px 10px",
           justifyContent: isRailCollapsed ? "center" : "flex-start",
           flexShrink: 0,
         }}

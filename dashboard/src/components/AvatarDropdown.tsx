@@ -23,6 +23,8 @@ import {
   LockOpen,
   SlidersHorizontal,
   RefreshCw,
+  Building2,
+  Download,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { authApi } from "../api/modules/auth";
@@ -53,6 +55,7 @@ import {
   emitDesktopMammothUpdate,
   isDesktopShell,
 } from "../utils/desktopChrome";
+import { ClientDownloadModal } from "../layouts/ClientDownloadLink";
 import styles from "./AvatarDropdown.module.less";
 
 const APP_OAUTH_KINDS = new Set(["feishu", "dingtalk", "wecom"]);
@@ -106,6 +109,7 @@ export default function AvatarDropdown({
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ssoProviders, setSsoProviders] = useState<
     { kind: string; display_name: string; enabled: boolean }[]
@@ -141,6 +145,21 @@ export default function AvatarDropdown({
     }
     await goMammothLogin();
   }, []);
+
+  /** 企业设置在企业控制台里；桌面端走一次性登录票，不额外弹登录。 */
+  const openEnterpriseSettings = useCallback(async () => {
+    setMenuOpen(false);
+    const { openEnterpriseConsoleFromClient } = await import(
+      "../utils/mammothSso"
+    );
+    try {
+      const url = new URL(await openEnterpriseConsoleFromClient());
+      url.searchParams.set("next", "/console/settings");
+      window.open(url.toString(), "_blank", "noopener");
+    } catch {
+      message.error(t("errors.consoleHandoffFailed"));
+    }
+  }, [t]);
 
   const handleSaveProfile = async (values: { display_name: string }) => {
     setSaving(true);
@@ -298,7 +317,6 @@ export default function AvatarDropdown({
     deferOpen(() => onCustomizeNav?.());
   };
 
-
   // MAMMOTH-PATCH: desktop/Wails only — Mammoth portable hot-restart (not Tencent PyPI).
   const requestVersionUpdate = () => {
     setMenuOpen(false);
@@ -308,7 +326,6 @@ export default function AvatarDropdown({
     }
     message.loading(t("account.versionUpdateStarted"), 2);
   };
-
 
   const closeSettings = () => setSettingsOpen(false);
   const closePassword = () => setPasswordOpen(false);
@@ -410,8 +427,18 @@ export default function AvatarDropdown({
         <span>{t("account.changePassword")}</span>
       </button>
 
+      <button
+        type="button"
+        className={styles.menuItem}
+        onClick={() => void openEnterpriseSettings()}
+      >
+        <Building2 size={16} strokeWidth={1.8} />
+        <span>{t("account.enterpriseSettings")}</span>
+      </button>
+
       {/* MAMMOTH-PATCH: hide upstream「检查更新」(Tencent Octop self-update channel).
-          Show Mammoth「版本更新」only inside the Wails desktop shell. */}
+          Show Mammoth「版本更新」only inside the Wails desktop shell; the browser
+          gets「下载客户端」in the same slot so both ends list the same items. */}
       {isDesktopShell() ? (
         <button
           type="button"
@@ -421,8 +448,19 @@ export default function AvatarDropdown({
           <RefreshCw size={16} strokeWidth={1.8} />
           <span>{t("account.versionUpdate")}</span>
         </button>
-      ) : null}
-
+      ) : (
+        <button
+          type="button"
+          className={styles.menuItem}
+          onClick={() => {
+            setMenuOpen(false);
+            setDownloadOpen(true);
+          }}
+        >
+          <Download size={16} strokeWidth={1.8} />
+          <span>{t("nav.downloadClient")}</span>
+        </button>
+      )}
 
       <Divider className={styles.menuDivider} />
 
@@ -867,6 +905,11 @@ export default function AvatarDropdown({
       >
         {passwordBody}
       </Drawer>
+
+      <ClientDownloadModal
+        open={downloadOpen}
+        onClose={() => setDownloadOpen(false)}
+      />
     </>
   );
 }

@@ -1,0 +1,41 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  flex-shrink: 0;
+  width: 32px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--fn-radius-md);
+  background: transparent;
+  color: var(--fn-text-tertiary);
+  cursor: pointer;
+  transition:
+    background var(--fn-transition-fast),
+    color var(--fn-transition-fast),
+    border-color var(--fn-transition-fast);
+
+  &:hover {
+    background: var(--fn-sidebar-item-hover);
+    border-color: var(--fn-border-subtle);
+    color: var(--fn-text-primary);
+  }
+}
+
+.itemLabel {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.4;
+}
+
+.itemCurrent {
+  font-weight: 600;
+}
+
+.itemHint {
+  color: var(--fn-text-tertiary);
+  font-size: 11px;
+}
