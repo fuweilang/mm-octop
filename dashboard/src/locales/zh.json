@@ -6948,12 +6948,16 @@
     "reload": "重新加载",
     "retry": "重试",
     "offlineTitle": "无法连接 猛犸AI 服务",
-    "offlineSubtitle": "网络不可用或后端未启动。请检查网络与服务状态后重试。",
+    "offlineSubtitle": "无法访问本机服务或网络不可用。若刚启动客户端，请稍候再试；也可查看下方诊断信息。",
     "loginUnreachableTitle": "打不开猛犸登录",
     "loginUnreachableSubtitle": "登录页在 {origin}，现在没有响应。客户端本身已在本机运行。",
     "loginUnreachableUnknown": "中台",
     "consoleHandoffFailed": "打不开企业控制台。请在客户端退出后重新登录，再试一次。",
-    "backHome": "返回首页"
+    "backHome": "返回首页",
+    "startingLocalTitle": "正在启动本地服务…",
+    "startingLocalSubtitle": "本机后端仍在初始化（并非网络不可用）。完成后会自动重试，也可手动重试。",
+    "offlineDiagnostics": "启动诊断（可复制）",
+    "copyDiagnostics": "复制"
   },
   "adminProviders": {
     "title": "Providers",

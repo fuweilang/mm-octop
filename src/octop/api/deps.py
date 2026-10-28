@@ -71,7 +71,14 @@ def is_jwt_exempt_request(request: Request) -> bool:
 def get_server(request: Request) -> OctopServer:
     server: OctopServer = request.app.state.octop_server
     if not getattr(server, "_started", False):
-        raise OctopError(ErrorCode.INTERNAL_ERROR, "server not started")
+        # 503 (not opaque 500): desktop/dashboard treat this as "still booting"
+        # instead of a fake network failure on /api/auth/oauth/status.
+        raise OctopError(
+            ErrorCode.INTERNAL_ERROR,
+            "server not started",
+            status=503,
+            details={"ready": False, "reason": "server_not_started"},
+        )
     return server
 
 

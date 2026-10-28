@@ -66,10 +66,31 @@ def _login_error_redirect(server: Any, public_base: str) -> str:
     return _service(server).login_error_frontend(public_base)
 
 
-@router.get("/oauth/status", summary="SSO login button status")
-async def oauth_status(server: Any = Depends(get_server)) -> dict[str, Any]:
-    """Return enabled dashboard SSO providers for the login page."""
-    return _service(server).providers_status()
+@router.get("/oauth/status", summary="SSO login button status", response_model=None)
+async def oauth_status(server: Any = Depends(get_server)) -> dict[str, Any] | JSONResponse:
+    """Return enabled dashboard SSO providers for the login page.
+
+    When the control-plane / user manager is still coming up, return a clear
+    503 ``{ready:false, reason}`` instead of an opaque 500 so the desktop
+    shell shows 「正在启动本地服务…」 rather than a fake network offline page.
+    """
+    try:
+        payload = _service(server).providers_status()
+    except RuntimeError as exc:
+        reason = str(exc) or "sso_not_ready"
+        logger.info("oauth/status not ready: %s", reason)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ready": False,
+                "reason": "user_manager_unavailable",
+                "detail": reason,
+                "providers": [],
+                "platform_origin": "",
+            },
+        )
+    payload.setdefault("ready", True)
+    return payload
 
 
 @router.post("/mammoth/console-link", summary="Open 中台 as the current desktop user")

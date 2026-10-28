@@ -6,6 +6,9 @@ version: "3"
 
 info:
   companyName: "猛犸AI"
+  # Display / package name must stay 猛犸智能体 (no alternate 猛犸AI app name).
+  # Installers should overwrite the same productIdentifier so leftover
+  # "猛犸AI" shells with com.tencent.octop do not sit beside this build.
   productName: "猛犸智能体"
   productIdentifier: "com.tencent.octop"
   description: "猛犸智能体"

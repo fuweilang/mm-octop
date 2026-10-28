@@ -6948,12 +6948,16 @@
     "reload": "Reload",
     "retry": "Retry",
     "offlineTitle": "Cannot reach the 猛犸AI server",
-    "offlineSubtitle": "The network may be offline or the backend is not running. Check connectivity and try again.",
+    "offlineSubtitle": "The local service is unreachable or the network is down. If you just launched the app, wait a moment and retry; diagnostics below may help.",
     "loginUnreachableTitle": "Cannot open 猛犸 login",
     "loginUnreachableSubtitle": "The login page is at {origin}, and it is not responding. The desktop app itself is already running.",
     "loginUnreachableUnknown": "the platform",
     "consoleHandoffFailed": "Could not open the enterprise console. Sign out of the client, sign in again, and retry.",
-    "backHome": "Back to Home"
+    "backHome": "Back to Home",
+    "startingLocalTitle": "Starting local service…",
+    "startingLocalSubtitle": "The local backend is still initializing (this is not a network failure). Retrying automatically; you can also retry manually.",
+    "offlineDiagnostics": "Boot diagnostics (copyable)",
+    "copyDiagnostics": "Copy"
   },
   "adminProviders": {
     "title": "Providers",

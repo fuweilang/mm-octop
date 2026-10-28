@@ -39,6 +39,7 @@ const (
 	copyHealthNotReady5xx      = "health.not_ready_5xx"
 	copyHealthNotReadyConnect  = "health.not_ready_connect"
 	copyHealthNotReady         = "health.not_ready"
+	copyWarnLegacyShell        = "warn.legacy_shell"
 )
 
 // assets/copy.json is the single source for desktop shell copy: this Go side

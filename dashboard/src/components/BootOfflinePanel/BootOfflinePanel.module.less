@@ -4,13 +4,54 @@
   align-items: center;
   justify-content: center;
   background: var(--fn-bg-layout, #f7f8fa);
-  padding: 24px 24px 18vh;
+  padding: 24px 24px 12vh;
   box-sizing: border-box;
 }
 
 .result {
+  max-width: 640px;
+  width: 100%;
+
   :global(.ant-result-icon) {
     display: flex;
     justify-content: center;
   }
+}
+
+.extra {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.diag {
+  width: min(560px, 92vw);
+  text-align: left;
+  background: var(--fn-bg-container, #fff);
+  border: 1px solid var(--fn-border, #e5e6eb);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.diagHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--fn-text-secondary, #86909c);
+  margin-bottom: 6px;
+}
+
+.diagBody {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--fn-text, #1d2129);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }

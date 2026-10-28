@@ -627,6 +627,46 @@ func TestLaunchReadyRejectsFlattenedPythonSymlink(t *testing.T) {
 	}
 }
 
+
+func TestEnsurePortableReplacesWhenNewerInstallStampMismatches(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OCTOP_HOME", home)
+	root := portableDir()
+
+	// On-disk tree claims a newer semver (e.g. leftover PyPI / old 1.0.8) but
+	// the stamp does not match this shell's bundled digest → must re-extract.
+	installedZip := filepath.Join(t.TempDir(), "installed.zip")
+	writeTestGreenZip(t, installedZip, "1.0.8")
+	if err := unzipGreen(installedZip, root); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(root, "stale.txt")
+	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, portableBundleStampName), []byte("not-the-bundled-digest\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	bundledZip := filepath.Join(t.TempDir(), "bundled.zip")
+	writeTestGreenZip(t, bundledZip, "1.0.2")
+	t.Setenv("OCTOP_DESKTOP_PORTABLE_ZIP", bundledZip)
+
+	replaced, err := ensurePortable(LocaleZH, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replaced {
+		t.Fatal("stamp mismatch must force portable replace even when installed semver is newer")
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale file should be gone after forced replace: %v", err)
+	}
+	if got := portableVersion(root); got != "1.0.2" {
+		t.Fatalf("portable version = %q, want bundled 1.0.2", got)
+	}
+}
+
 func TestFormatHealthWaitErrorIsActionableChinese(t *testing.T) {
 	err := formatHealthWaitError(LocaleZH, "http://127.0.0.1:8088/", time.Minute, errors.New("connection refused"), 0)
 	if err == nil {
@@ -676,6 +716,18 @@ func TestFormatHealthWaitErrorUsesServiceNotReadyHintOn5xx(t *testing.T) {
 	en := formatHealthWaitError(LocaleEN, "http://127.0.0.1:8088", 2*time.Minute, nil, 503).Error()
 	if !strings.Contains(en, "2 minutes") || !strings.Contains(en, "not ready yet") {
 		t.Fatalf("en 5xx hint: %s", en)
+	}
+}
+
+
+func TestWaitHealthRejects5xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	err := waitHealth(LocaleEN, srv.URL, 200*time.Millisecond)
+	if err == nil {
+		t.Fatal("503 must not count as healthy")
 	}
 }
 

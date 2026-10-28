@@ -7,7 +7,12 @@ import { authApi, type OctopUser } from "../api/modules/auth";
 import { applyUserLocale } from "../utils/locale";
 import { isNetworkFetchError } from "../utils/networkError";
 import {
+  collectBootDiagnostics,
+  type BootDiagnostics,
+} from "../utils/bootDiagnostics";
+import {
   MammothLoginUnreachableError,
+  PlatformOriginInitializingError,
   readPlatformOrigin,
   shouldUseLocalLogin,
   startMammothSession,
@@ -35,6 +40,8 @@ interface AuthGuardProps {
  *
  * When the backend is unreachable (offline / Failed to fetch), show an
  * explicit offline panel with Retry instead of mounting a blank shell.
+ * When health is up but oauth/status reports initializing (503 / ready:false),
+ * show the starting-local panel — not a fake network failure.
  *
  * Auth is checked on mount and on explicit offline retry only. Do not put
  * ``navigate`` in the effect deps: under ``BrowserRouter``, React Router's
@@ -51,31 +58,53 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const [authed, setAuthed] = useState(false);
   const [user, setUser] = useState<OctopUser | null>(null);
   const [offline, setOffline] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<BootDiagnostics | null>(null);
   const [loginOrigin, setLoginOrigin] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
 
+    const showUnreachable = async (lastError: string) => {
+      const diag = await collectBootDiagnostics(lastError);
+      if (cancelled) return;
+      setDiagnostics(diag);
+      setOffline(true);
+      setChecking(false);
+      setAuthed(false);
+    };
+
     const openLogin = async () => {
-      const origin = await readPlatformOrigin();
-      if (origin === null) {
-        if (!cancelled) {
-          setOffline(true);
-          setChecking(false);
+      try {
+        const origin = await readPlatformOrigin();
+        if (origin === null) {
+          if (!cancelled) {
+            await showUnreachable("oauth/status probe failed");
+          }
+          return "offline" as const;
         }
+        if (shouldUseLocalLogin(origin, window.location.origin)) {
+          if (!cancelled) navigateRef.current("/login", { replace: true });
+          return "local" as const;
+        }
+        return "browser" as const;
+      } catch (error) {
+        if (cancelled) return "offline" as const;
+        if (error instanceof PlatformOriginInitializingError) {
+          await showUnreachable(error.message || "local backend initializing");
+          return "offline" as const;
+        }
+        await showUnreachable(
+          error instanceof Error ? error.message : "oauth/status failed",
+        );
         return "offline" as const;
       }
-      if (shouldUseLocalLogin(origin, window.location.origin)) {
-        if (!cancelled) navigateRef.current("/login", { replace: true });
-        return "local" as const;
-      }
-      return "browser" as const;
     };
 
     const check = async () => {
       setOffline(false);
       setLoginOrigin(null);
+      setDiagnostics(null);
       try {
         const status = await authApi.getAuthStatus();
 
@@ -107,8 +136,13 @@ export default function AuthGuard({ children }: AuthGuardProps) {
                 setChecking(false);
                 return;
               }
-              setOffline(true);
-              setChecking(false);
+              if (error instanceof PlatformOriginInitializingError) {
+                await showUnreachable(error.message);
+                return;
+              }
+              await showUnreachable(
+                error instanceof Error ? error.message : "login start failed",
+              );
             }
           }
           return;
@@ -128,9 +162,9 @@ export default function AuthGuard({ children }: AuthGuardProps) {
         } catch (err) {
           if (cancelled) return;
           if (isNetworkFetchError(err)) {
-            setOffline(true);
-            setChecking(false);
-            setAuthed(false);
+            await showUnreachable(
+              err instanceof Error ? err.message : "auth/me network error",
+            );
             return;
           }
           setAuthed(false);
@@ -145,19 +179,21 @@ export default function AuthGuard({ children }: AuthGuardProps) {
               setChecking(false);
               return;
             }
-            setOffline(true);
-            setChecking(false);
+            if (error instanceof PlatformOriginInitializingError) {
+              await showUnreachable(error.message);
+              return;
+            }
+            await showUnreachable(
+              error instanceof Error ? error.message : "login start failed",
+            );
           }
         }
       } catch (err) {
         if (cancelled) return;
-        // Backend unreachable (or setup/status otherwise failed) — do not
-        // mount MainLayout with a null user (that produced a blank white
-        // shell with no recovery action).
-        void err;
-        setOffline(true);
-        setChecking(false);
-        setAuthed(false);
+        // Backend unreachable, still starting, or setup/status failed.
+        const message =
+          err instanceof Error ? err.message : "setup/status failed";
+        await showUnreachable(message);
       }
     };
 
@@ -167,13 +203,27 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     };
   }, [retryKey]);
 
+  // Auto-retry while local backend is initializing (first-boot race).
+  useEffect(() => {
+    if (!offline || diagnostics?.phase !== "initializing") return;
+    const timer = window.setTimeout(() => {
+      setChecking(true);
+      setAuthed(false);
+      setOffline(false);
+      setRetryKey((k) => k + 1);
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [offline, diagnostics?.phase, retryKey]);
+
   if (offline) {
     return (
       <BootOfflinePanel
+        diagnostics={diagnostics}
         onRetry={() => {
           setChecking(true);
           setAuthed(false);
           setOffline(false);
+          setDiagnostics(null);
           setRetryKey((k) => k + 1);
         }}
       />

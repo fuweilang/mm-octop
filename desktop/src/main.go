@@ -181,6 +181,11 @@ func (a *App) boot() {
 		a.showDashboard(url)
 		return
 	}
+	if legacy := detectLegacySiblingInstall(); legacy != "" {
+		warn := desktopText(locale, copyWarnLegacyShell)
+		log.Printf("desktop: %s (%s)", warn, legacy)
+		a.setStatus(warn)
+	}
 	a.setStatus(desktopText(locale, copyStatusCheckingRuntime))
 	replaced, err := ensurePortable(locale, a.setStatus)
 	if err != nil {

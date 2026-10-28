@@ -90,26 +90,44 @@ func bundledRuntimeNeedsReplace(root string) (newer bool, sameVersionChanged boo
 	if currentVersion == "" || compareVersions(bundledVersion, currentVersion) > 0 {
 		return true, false
 	}
+	want, digErr := bundledPortableDigest()
+	stamp := readPortableBundleStamp(root)
+	digestKnown := digErr == nil && want != ""
+	stampMismatch := digestKnown && stamp != "" && stamp != want
+	// Missing stamp on an equal/newer tree usually means a leftover
+	// ~/.octop/portable from an older Mammoth build (1.0.2 / 1.0.8 era) that
+	// never recorded .bundle-sha256 — always re-extract when the shell can
+	// prove its embedded/bundled digest.
+	missingStamp := digestKnown && stamp == ""
 	if compareVersions(bundledVersion, currentVersion) < 0 {
+		// Installed semver is newer (e.g. in-app PyPI bump). Keep it unless the
+		// stamp is present and proves a different shell bundle (foreign leftover).
+		// A missing stamp alone is normal after an in-app upgrade — do not wipe it.
+		if stampMismatch {
+			return false, true
+		}
 		return false, false
 	}
-	want, err := bundledPortableDigest()
-	if err != nil || want == "" {
-		return false, false
+	// Same version: any digest change OR missing stamp forces re-extract.
+	if !digestKnown {
+		// Cannot hash the bundle — still replace when stamp is absent so a
+		// stamp-less stale tree cannot stick across upgrades.
+		return false, stamp == ""
 	}
-	return false, readPortableBundleStamp(root) != want
+	return false, stampMismatch || missingStamp
 }
 
 // installedPortableMatchesMammothBrand reports whether the extracted dashboard
-// still carries Mammoth white-label branding. Missing index.html (dev/test
-// fixtures) is treated as OK so brand checks do not force unnecessary replaces.
+// still carries Mammoth white-label branding (猛犸智能体 or legacy 猛犸AI).
+// Missing index.html (dev/test fixtures) is treated as OK so brand checks do
+// not force unnecessary replaces.
 func installedPortableMatchesMammothBrand(root string) bool {
 	index := filepath.Join(root, "packages", "octop", "dashboard", "index.html")
 	data, err := os.ReadFile(index)
 	if err != nil {
 		return true
 	}
-	return bytes.Contains(data, []byte("猛犸AI"))
+	return bytes.Contains(data, []byte("猛犸智能体")) || bytes.Contains(data, []byte("猛犸AI"))
 }
 
 func bundledPortableDigest() (string, error) {
@@ -437,9 +455,9 @@ func unzipGreenFiles(files []*zip.File, dest string) error {
 }
 
 func waitHealth(locale Locale, base string, timeout time.Duration) error {
-	// Lenient on purpose (unlike octopAlreadyRunning in process.go): any HTTP
-	// response < 500 counts as "up" here — while waiting for boot, a healthy
-	// payload is not required, only proof that the server is answering.
+	// Require 2xx before loading the UI. A 503 from get_server ("server not
+	// started") must not open the webview early — that race made AuthGuard
+	// treat oauth/status failures as a network offline page.
 	deadline := time.Now().Add(timeout)
 	url := strings.TrimRight(base, "/") + "/api/health"
 	var lastErr error
@@ -450,7 +468,7 @@ func waitHealth(locale Locale, base string, timeout time.Duration) error {
 			lastStatus = resp.StatusCode
 			lastErr = nil
 			resp.Body.Close()
-			if resp.StatusCode >= 200 && resp.StatusCode < 500 {
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				return nil
 			}
 		} else {

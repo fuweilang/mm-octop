@@ -131,6 +131,9 @@ describe("goMammothLogin", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ platform_origin: "" }),
         json: async () => ({ platform_origin: "" }),
       }),
     );
@@ -146,6 +149,10 @@ describe("goMammothLogin", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({ platform_origin: "https://www.mmai.vip" }),
         json: async () => ({ platform_origin: "https://www.mmai.vip" }),
       }),
     );
@@ -172,6 +179,9 @@ describe("openEnterpriseConsoleFromClient", () => {
         if (url.includes("/api/auth/oauth/status")) {
           return {
             ok: true,
+            status: 200,
+            text: async () =>
+              JSON.stringify({ platform_origin: "https://www.mmai.vip" }),
             json: async () => ({ platform_origin: "https://www.mmai.vip" }),
           };
         }
@@ -200,7 +210,12 @@ describe("openEnterpriseConsoleFromClient", () => {
       vi.fn(async (input: string) => {
         const url = String(input);
         if (url.includes("/api/auth/oauth/status")) {
-          return { ok: true, json: async () => ({ platform_origin: "" }) };
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ platform_origin: "" }),
+            json: async () => ({ platform_origin: "" }),
+          };
         }
         if (url.includes("/api/auth/mammoth/console-link")) {
           return { ok: false, json: async () => ({}) };
@@ -230,6 +245,9 @@ describe("openEnterpriseConsoleFromClient", () => {
         if (url.includes("/api/auth/oauth/status")) {
           return {
             ok: true,
+            status: 200,
+            text: async () =>
+              JSON.stringify({ platform_origin: "https://www.mmai.vip" }),
             json: async () => ({ platform_origin: "https://www.mmai.vip" }),
           };
         }

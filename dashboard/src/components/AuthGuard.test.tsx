@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
@@ -31,6 +31,18 @@ describe("AuthGuard offline boot", () => {
     vi.mocked(authApi.me).mockReset();
     vi.mocked(getAuthToken).mockReset();
     vi.mocked(getAuthToken).mockReturnValue(null);
+    // BootOfflinePanel diagnostics probe health/setup/oauth; default to network down.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetPlatformOriginCache();
   });
 
   it("sends a fresh desktop install to the local login form", async () => {
@@ -42,6 +54,9 @@ describe("AuthGuard offline boot", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({ platform_origin: "https://www.mmai.vip" }),
         json: async () => ({ platform_origin: "https://www.mmai.vip" }),
       }),
     );

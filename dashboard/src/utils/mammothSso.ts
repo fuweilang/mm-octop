@@ -7,16 +7,50 @@ export function resetPlatformOriginCache(): void {
   platformOriginCache = null;
 }
 
+/** Local Octop is up but user-manager / SSO is still booting. */
+export class PlatformOriginInitializingError extends Error {
+  status: number;
+  body: string;
+
+  constructor(status: number, body: string) {
+    super(body || `oauth/status HTTP ${status} (initializing)`);
+    this.name = "PlatformOriginInitializingError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+function isInitializingPayload(status: number, body: string): boolean {
+  if (status === 503) return true;
+  const lower = body.toLowerCase();
+  return (
+    /"ready"\s*:\s*false/.test(body) ||
+    lower.includes("not started") ||
+    lower.includes("user_manager") ||
+    lower.includes("user manager")
+  );
+}
+
 /** 中台 origin. Local dev stays on the gateway origin; the installed client uses production. */
 async function loadPlatformOrigin(): Promise<string | null> {
   if (platformOriginCache !== null) return platformOriginCache;
   try {
     const res = await fetch("/api/auth/oauth/status", { cache: "no-store" });
-    if (res.ok === false) return null;
-    const data = (await res.json()) as { platform_origin?: string };
+    const body = await res.text();
+    if (res.ok === false) {
+      if (isInitializingPayload(res.status, body)) {
+        throw new PlatformOriginInitializingError(res.status, body.slice(0, 240));
+      }
+      return null;
+    }
+    const data = JSON.parse(body) as { platform_origin?: string; ready?: boolean };
+    if (data.ready === false) {
+      throw new PlatformOriginInitializingError(res.status, body.slice(0, 240));
+    }
     platformOriginCache = (data.platform_origin || "").replace(/\/$/, "");
     return platformOriginCache;
-  } catch {
+  } catch (err) {
+    if (err instanceof PlatformOriginInitializingError) throw err;
     return null;
   }
 }

@@ -47,10 +47,16 @@ def resolve_client_ip(request: Any) -> str:
     Falls back to :data:`UNKNOWN_CLIENT` when the ASGI scope carries no peer
     (e.g. an in-process test client), which collapses those callers into a single
     bucket rather than giving each request a fresh one.
+
+    When the direct peer is loopback (local nginx / sidecar), prefer
+    ``X-Forwarded-For`` (right-most) then ``X-Real-IP``.
     """
     peer = _peer_address(request)
     if peer and _is_loopback(peer):
         forwarded = _forwarded_for_rightmost(request)
         if forwarded:
             return forwarded
+        real_ip = (request.headers.get("x-real-ip") or "").strip()
+        if real_ip:
+            return real_ip
     return peer or UNKNOWN_CLIENT
