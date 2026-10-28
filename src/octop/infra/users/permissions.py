@@ -217,9 +217,9 @@ PERMISSIONS: dict[str, PermissionDef] = {
         "admin",
         "知识库设置",
         "Knowledge-base settings",
-        page="advanced",
-        page_zh="应用设置",
-        page_en="App settings",
+        page="knowledge-bases",
+        page_zh="知识库",
+        page_en="Knowledge Base",
     ),
     "voice": _p(
         "voice",
