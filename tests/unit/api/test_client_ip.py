@@ -43,6 +43,12 @@ def test_loopback_peer_may_forward_the_client_address():
     assert resolve_client_ip(request) == "203.0.113.7"
 
 
+def test_private_peer_may_forward_the_client_address():
+    """nginx on the host reaches the container over its docker bridge address."""
+    request = _Request(peer="172.23.0.1", forwarded_for="203.0.113.7")
+    assert resolve_client_ip(request) == "203.0.113.7"
+
+
 def test_forwarded_chain_takes_the_right_most_hop():
     """A trusted proxy appends what it saw; values to its left may be forged."""
     request = _Request(peer="::1", forwarded_for="1.2.3.4, 203.0.113.7")

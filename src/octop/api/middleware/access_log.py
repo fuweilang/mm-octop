@@ -42,6 +42,17 @@ def install(app: Any) -> None:
         return
     setattr(app, _INSTALL_ATTR, True)
 
+    # uvicorn 只配置自己的 logger，root 默认停在 WARNING，
+    # 不显式挂 handler 时 logger.info 会被静默丢掉。
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+        )
+        logger.addHandler(handler)
+        logger.propagate = False
+    logger.setLevel(logging.INFO)
+
     @app.middleware("http")  # type: ignore[untyped-decorator]
     async def _access_log(
         request: Request,
