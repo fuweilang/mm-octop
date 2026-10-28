@@ -170,6 +170,13 @@ func jsonString(s string) string {
 	return string(b)
 }
 
+// logLeftoverInstance records that a second instance of ours survived the
+// cleanup. The alternate port stays remembered in that case so the leftover is
+// still looked at on the next boot.
+func logLeftoverInstance() {
+	log.Printf("desktop: a leftover instance of ours is still up; keeping the alternate port remembered")
+}
+
 func (a *App) setStatus(msg string) {
 	if a.app == nil {
 		return
@@ -234,8 +241,9 @@ func (a *App) boot() {
 	if replaced {
 		// Runtime files on disk just changed; never attach to a stale process
 		// that still serves the previous code from memory.
-		for _, candidate := range candidates {
-			stopListeningOctop(host, candidate)
+		if !stopOurInstances(host, candidates, 0, root) {
+			logLeftoverInstance()
+			keepAlternate = false
 		}
 	} else if existing != "" {
 		runningPort, hasPort := portFromDashboardURL(existing)
@@ -249,7 +257,7 @@ func (a *App) boot() {
 			// another candidate. A service that merely happens to be an Octop
 			// (docker proxy, dev venv) is left alone.
 			if hasPort && !stopOurInstances(host, candidates, runningPort, root) {
-				log.Printf("desktop: a second instance of ours is still up; keeping port %d remembered", runningPort)
+				logLeftoverInstance()
 				keepAlternate = false
 			}
 			if keepAlternate {
@@ -271,7 +279,7 @@ func (a *App) boot() {
 		if hasPort {
 			stopListeningOctop(host, runningPort)
 			if !stopOurInstances(host, candidates, runningPort, root) {
-				log.Printf("desktop: a second instance of ours is still up; keeping port %d remembered", runningPort)
+				logLeftoverInstance()
 				keepAlternate = false
 			}
 			// Restart on the same port so the origin (and the dashboard login)
@@ -283,8 +291,9 @@ func (a *App) boot() {
 		// half-started leftover of ours. Clear it now so a stale python is not
 		// mistaken for a third-party program below. Only processes started from
 		// this portable tree are stopped.
-		for _, candidate := range candidates {
-			stopListeningOctop(host, candidate)
+		if !stopOurInstances(host, candidates, 0, root) {
+			logLeftoverInstance()
+			keepAlternate = false
 		}
 	}
 	a.mu.Lock()
