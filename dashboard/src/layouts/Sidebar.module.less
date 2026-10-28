@@ -2,6 +2,23 @@
   border-top: 1px solid var(--fn-border-subtle);
 }
 
+/* 账号区：与导航组隔开一条细线 + 8px，用户卡整块可点 */
+.accountBlock {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--fn-border-subtle);
+}
+
+/* 品牌 + 产品切换器同一行 */
+.brandMain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
 .navGroup {
   margin-bottom: 6px;
 
@@ -150,31 +167,54 @@
   }
 }
 
-.downloadSplit {
+/* 下载入口：次级样式，无底色无描边，hover 才升主色 */
+.downloadButton {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 10px;
   width: 100%;
+  height: 40px;
+  padding: 0 12px;
   margin-bottom: 2px;
+  border: none;
+  border-radius: var(--fn-radius-md);
+  background: transparent;
+  color: var(--fn-text-tertiary);
+  font-size: 14px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--fn-transition-fast),
+    color var(--fn-transition-fast);
+
+  &:hover {
+    background: var(--fn-sidebar-item-hover);
+    color: var(--fn-text-primary);
+
+    .downloadButtonIcon {
+      color: var(--fn-text-primary);
+    }
+  }
 }
 
-.downloadSplit .middleOfficeLink {
-  flex: 1;
-  min-width: 0;
-  width: auto;
-  margin-bottom: 0;
-  border-radius: var(--fn-radius-md) 0 0 var(--fn-radius-md);
+.downloadButtonIcon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: var(--fn-text-tertiary);
+  transition: color var(--fn-transition-fast);
 }
 
-.downloadMore {
+.downloadButtonCompact {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  width: 28px;
-  margin: 0;
-  padding: 0;
+  width: 100%;
+  height: 40px;
+  margin-bottom: 2px;
   border: none;
-  border-radius: 0 var(--fn-radius-md) var(--fn-radius-md) 0;
+  border-radius: var(--fn-radius-md);
   background: transparent;
   color: var(--fn-text-tertiary);
   cursor: pointer;
@@ -188,12 +228,140 @@
   }
 }
 
-.downloadMenuItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+/* 下载弹窗 */
+.downloadChoose {
+  margin: 0 0 6px;
+  color: var(--fn-text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
 }
 
+.downloadMeta {
+  margin: 0 0 14px;
+  color: var(--fn-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.downloadOptions {
+  border: 1px solid var(--fn-border-subtle);
+  border-radius: var(--fn-radius-md);
+  overflow: hidden;
+
+  > :last-child {
+    border-bottom: 0;
+  }
+}
+
+.downloadOption {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--fn-border-subtle);
+  cursor: pointer;
+  transition: background var(--fn-transition-fast);
+
+  &:hover {
+    background: var(--fn-sidebar-item-hover);
+  }
+}
+
+.downloadOptionIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--fn-border-subtle);
+  border-radius: var(--fn-radius-md);
+  color: var(--fn-text-secondary);
+
+  svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+.downloadOptionText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.downloadOptionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fn-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.downloadOptionBadge {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--fn-primary-bg);
+  color: var(--fn-primary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.downloadOptionSub {
+  color: var(--fn-text-secondary);
+  font-size: 12px;
+}
+
+.downloadOptionAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--fn-text-tertiary);
+  font-size: 13px;
+
+  .downloadOption:hover & {
+    color: var(--fn-primary);
+  }
+}
+
+.downloadRetry {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fn-primary);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+
+  &:hover {
+    color: var(--fn-primary);
+    opacity: 0.8;
+  }
+}
+
+.downloadMacHint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: -4px 0 0;
+  padding: 0 16px 12px 68px;
+  border-bottom: 1px solid var(--fn-border-subtle);
+  color: var(--fn-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+
+  svg {
+    width: 12px;
+    height: 12px;
+    margin: 0 1px;
+  }
+}
 
 .chatRailExpandBtn {
   display: flex;
