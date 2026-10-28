@@ -260,7 +260,7 @@ func (a *App) boot() {
 				logLeftoverInstance()
 				keepAlternate = false
 			}
-			if keepAlternate {
+			if hasPort && keepAlternate {
 				a.rememberListenPort(runningPort, configured)
 			}
 			a.showDashboard(existing)
