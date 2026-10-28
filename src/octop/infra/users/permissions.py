@@ -289,7 +289,8 @@ BASELINE_PERMISSIONS: set[str] = {
 def user_has_permission(user: PermissionUser, key: str) -> bool:
     """Return True if ``user`` may access the module ``key``.
 
-    Unknown keys are denied. ``admin`` bypasses everything.
+    Unknown keys (including ground ``portal.*``) are denied. ``admin`` bypasses
+    everything. Gatekeeping stays key-based — do not infer from org OWNER.
     """
     if key not in PERMISSIONS:
         return False
@@ -298,18 +299,32 @@ def user_has_permission(user: PermissionUser, key: str) -> bool:
     return key in (user.permissions or [])
 
 
-def validate_permission_keys(keys: list[str]) -> list[str]:
-    """Return a deduped list or raise ``ValueError`` on unknown keys."""
-    unknown = sorted({k for k in keys if k not in PERMISSIONS})
-    if unknown:
-        raise ValueError(f"unknown permission keys: {unknown}")
+def filter_octop_permission_keys(keys: list[str]) -> list[str]:
+    """Keep Octop catalog keys only; drop ``portal.*`` and other unknown keys.
+
+    Ground Catalog may include portal keys Octop does not store. SSO and
+    claim application use this so unknown portal keys never error.
+    """
     seen: set[str] = set()
     out: list[str] = []
-    for k in keys:
-        if k not in seen:
-            seen.add(k)
-            out.append(k)
+    for key in keys:
+        if key in PERMISSIONS and key not in seen:
+            seen.add(key)
+            out.append(key)
     return out
+
+
+def validate_permission_keys(keys: list[str]) -> list[str]:
+    """Return a deduped list of Octop keys or raise on unknown non-portal keys.
+
+    Unknown ``portal.*`` keys are ignored (not an error): Octop only validates
+    its own module keys. Other unknown keys still raise ``ValueError``.
+    """
+    considered = [k for k in keys if not str(k).startswith("portal.")]
+    unknown = sorted({k for k in considered if k not in PERMISSIONS})
+    if unknown:
+        raise ValueError(f"unknown permission keys: {unknown}")
+    return filter_octop_permission_keys(considered)
 
 
 def effective_permissions(user: PermissionUser) -> list[str]:

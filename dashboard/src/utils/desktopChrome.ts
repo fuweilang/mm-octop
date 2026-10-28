@@ -107,6 +107,17 @@ function dragEventElement(target: EventTarget | null): Element | null {
 }
 
 /** True when a primary click should start a frameless window-drag gesture. */
+
+/** MAMMOTH-PATCH: ask the Wails shell to run Phase 1 portable self-update. */
+export function emitDesktopMammothUpdate(
+  win: Pick<DesktopWindow, "_wails"> = window as DesktopWindow,
+): boolean {
+  const invoke = win._wails?.invoke;
+  if (typeof invoke !== "function") return false;
+  invoke("wails:event:emit:desktop:mammoth-update");
+  return true;
+}
+
 export function shouldArmDesktopDrag(
   event: Pick<MouseEvent, "button" | "clientY" | "target">,
 ): boolean {

@@ -12,6 +12,7 @@ from octop.infra.users.permissions import (
     PERMISSIONS,
     effective_permissions,
     user_has_permission,
+    filter_octop_permission_keys,
     validate_permission_keys,
 )
 
@@ -98,3 +99,26 @@ def test_validate_permission_keys_rejects_unknown() -> None:
 def test_effective_permissions_admin_gets_catalog() -> None:
     admin = _FakeUser(is_admin=True, permissions=[])
     assert effective_permissions(admin) == sorted(ALL_PERMISSION_KEYS)
+
+
+def test_validate_permission_keys_ignores_portal_keys() -> None:
+    assert validate_permission_keys(
+        ["browser", "portal.admin.access", "portal.console.members", "users"]
+    ) == ["browser", "users"]
+
+
+def test_validate_permission_keys_still_rejects_unknown_non_portal() -> None:
+    with pytest.raises(ValueError):
+        validate_permission_keys(["browser", "not_a_real_key", "portal.admin.access"])
+
+
+def test_filter_octop_permission_keys_drops_portal_and_unknown() -> None:
+    assert filter_octop_permission_keys(
+        ["experts", "portal.admin.access", "providers", "totally_unknown", "experts"]
+    ) == ["experts", "providers"]
+
+
+def test_user_has_permission_denies_portal_key() -> None:
+    u = _FakeUser(is_admin=False, permissions=["portal.admin.access", "experts"])
+    assert user_has_permission(u, "experts") is True
+    assert user_has_permission(u, "portal.admin.access") is False

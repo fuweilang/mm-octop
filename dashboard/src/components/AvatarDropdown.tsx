@@ -22,6 +22,7 @@ import {
   Lock,
   LockOpen,
   SlidersHorizontal,
+  RefreshCw,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { authApi } from "../api/modules/auth";
@@ -48,6 +49,10 @@ import {
   ProfileAvatar,
   ProfileAvatarPicker,
 } from "../pages/Admin/Users/ProfileAvatar";
+import {
+  emitDesktopMammothUpdate,
+  isDesktopShell,
+} from "../utils/desktopChrome";
 import styles from "./AvatarDropdown.module.less";
 
 const APP_OAUTH_KINDS = new Set(["feishu", "dingtalk", "wecom"]);
@@ -293,6 +298,18 @@ export default function AvatarDropdown({
     deferOpen(() => onCustomizeNav?.());
   };
 
+
+  // MAMMOTH-PATCH: desktop/Wails only — Mammoth portable hot-restart (not Tencent PyPI).
+  const requestVersionUpdate = () => {
+    setMenuOpen(false);
+    if (!emitDesktopMammothUpdate()) {
+      message.error(t("account.versionUpdateStarted"));
+      return;
+    }
+    message.loading(t("account.versionUpdateStarted"), 2);
+  };
+
+
   const closeSettings = () => setSettingsOpen(false);
   const closePassword = () => setPasswordOpen(false);
 
@@ -393,7 +410,19 @@ export default function AvatarDropdown({
         <span>{t("account.changePassword")}</span>
       </button>
 
-      {/* MAMMOTH-PATCH: hide upstream「检查更新」(Tencent Octop self-update channel) */}
+      {/* MAMMOTH-PATCH: hide upstream「检查更新」(Tencent Octop self-update channel).
+          Show Mammoth「版本更新」only inside the Wails desktop shell. */}
+      {isDesktopShell() ? (
+        <button
+          type="button"
+          className={styles.menuItem}
+          onClick={requestVersionUpdate}
+        >
+          <RefreshCw size={16} strokeWidth={1.8} />
+          <span>{t("account.versionUpdate")}</span>
+        </button>
+      ) : null}
+
 
       <Divider className={styles.menuDivider} />
 

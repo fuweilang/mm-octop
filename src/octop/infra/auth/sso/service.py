@@ -520,10 +520,60 @@ class SsoService:
                 nonce=nonce,
                 httpx=client,
             )
+            # MAMMOTH-PATCH: pull ground userinfo for full permissions[] (ID token
+            # may omit/hash when catalog grows). userinfo wins for RBAC fields.
+            self._merge_userinfo_claims(claims, token=token, discovery=discovery, client=client)
             handoff = token.get("console_handoff_token") if isinstance(token, dict) else None
             if isinstance(handoff, str) and handoff.strip():
                 claims[_CONSOLE_HANDOFF_CLAIM] = handoff.strip()
             return claims
+
+    _USERINFO_RBAC_KEYS = (
+        "permissions",
+        "platform_role",
+        "is_platform_admin",
+        "tenant_id",
+        "name",
+        "preferred_username",
+        "phone_number",
+        "email",
+    )
+
+    def _merge_userinfo_claims(
+        self,
+        claims: dict[str, Any],
+        *,
+        token: object,
+        discovery: Mapping[str, object],
+        client: httpx.Client,
+    ) -> None:
+        """Overlay OIDC userinfo RBAC fields onto verified ID-token claims.
+
+        Failures are logged and ignored so login still works from id_token alone.
+        """
+        if not isinstance(token, dict):
+            return
+        access_token = token.get("access_token")
+        if not isinstance(access_token, str) or not access_token.strip():
+            return
+        endpoint = discovery.get("userinfo_endpoint")
+        if not isinstance(endpoint, str) or not endpoint.strip():
+            return
+        try:
+            response = client.get(
+                endpoint.strip(),
+                headers={"Authorization": f"Bearer {access_token.strip()}"},
+            )
+            response.raise_for_status()
+            info = response.json()
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            logger.warning("SSO userinfo fetch failed; using id_token claims: %s", exc)
+            return
+        if not isinstance(info, dict):
+            return
+        for key in self._USERINFO_RBAC_KEYS:
+            if key in info:
+                claims[key] = info[key]
 
     def _store_console_handoff(self, user_id: int, claims: Mapping[str, Any]) -> None:
         token = claims.get(_CONSOLE_HANDOFF_CLAIM)

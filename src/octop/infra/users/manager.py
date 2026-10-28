@@ -26,7 +26,10 @@ from octop.infra.errors import ErrorCode, OctopError
 from octop.infra.users.email import normalize_email, parse_optional_email
 from octop.infra.users.identity import Role, User
 from octop.infra.users.password import hash_password, validate_password_policy, verify_password
-from octop.infra.users.permissions import validate_permission_keys
+from octop.infra.users.permissions import (
+    filter_octop_permission_keys,
+    validate_permission_keys,
+)
 from octop.infra.users.preferences import (
     ModelReasoningPreference,
     RemoteBrowserBookmark,
@@ -74,10 +77,56 @@ def _claim_display_name(claims: dict[str, Any]) -> str | None:
     return name.strip() if isinstance(name, str) and name.strip() else None
 
 
-# MAMMOTH-PATCH: 解析中台 OIDC 的 is_platform_admin claim，用于 SSO 首登/已有用户提权 B类-SSO中台胶水
-def _claim_wants_admin(claims: dict[str, Any]) -> bool:
-    raw = claims.get("is_platform_admin")
-    return raw is True or raw == 1 or raw == "true" or raw == "1"
+# MAMMOTH-PATCH: ground RBAC claims → Octop shadow user (unify-ground-octop-rbac §5)
+# Priority: ground permission keys > local role/admin bypass.
+# Elevate local system admin ONLY for platform super_admin (legacy bypass).
+# Enterprise OWNER/ADMIN and platform_admin MUST NOT become Octop admin.
+_PLATFORM_SUPER_ROLE = "super_admin"
+
+
+def _claim_wants_local_admin_bypass(claims: dict[str, Any]) -> bool:
+    """True only when claims declare platform ``super_admin`` (legacy admin bypass).
+
+    ``is_platform_admin`` alone is insufficient: ground sets it for any platform
+    role (including ``platform_admin``). Org OWNER never implies local admin.
+    """
+    role = claims.get("platform_role")
+    if isinstance(role, str) and role.strip() == _PLATFORM_SUPER_ROLE:
+        return True
+    return False
+
+
+def _claim_permissions(claims: dict[str, Any]) -> builtins.list[str] | None:
+    """Return permissions list when the claim is present; else ``None`` (fallback).
+
+    Present-but-empty means ground intentionally granted no module keys.
+    Unparseable values are treated as missing so local permissions remain.
+    """
+    if "permissions" not in claims:
+        return None
+    raw = claims.get("permissions")
+    if raw is None:
+        return None
+    if isinstance(raw, list):
+        out: builtins.list[str] = []
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+        return out
+    if isinstance(raw, str):
+        import json
+
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+        if isinstance(parsed, list):
+            return [
+                item.strip()
+                for item in parsed
+                if isinstance(item, str) and item.strip()
+            ]
+    return None
 
 
 def _is_unique_violation(exc: BaseException) -> bool:
@@ -308,16 +357,39 @@ class UserManager:
                     seeded_user_role_assignment,
                 )
 
-                # MAMMOTH-PATCH: is_platform_admin claim 时首登直接落 admin 角色 B类-SSO中台胶水
-                assignment = (
-                    role_assignment_for(self._services.db, ADMIN_USER_ROLE_ID)
-                    if _claim_wants_admin(claims)
-                    else seeded_user_role_assignment(self._services.db)
-                )
-                sso_role_id = assignment[0] if assignment else Role.USER
-                sso_role_name = assignment[1] if assignment else None
-                sso_permissions = list(assignment[2]) if assignment else []
-                sso_policies = list(assignment[3]) if assignment else []
+                # MAMMOTH-PATCH: ground permissions keys > local; admin bypass only for
+                # platform super_admin. Never map enterprise OWNER → local admin.
+                claim_perms = _claim_permissions(claims)
+                wants_bypass = _claim_wants_local_admin_bypass(claims)
+                if claim_perms is not None:
+                    octop_keys = filter_octop_permission_keys(claim_perms)
+                    if wants_bypass:
+                        assignment = role_assignment_for(self._services.db, ADMIN_USER_ROLE_ID)
+                        sso_role_id = assignment[0] if assignment else Role.ADMIN
+                        sso_role_name = assignment[1] if assignment else "admin"
+                        # Admin bypass; store filtered keys for visibility when demoted later.
+                        sso_permissions = octop_keys
+                        sso_policies = list(assignment[3]) if assignment else []
+                    else:
+                        assignment = seeded_user_role_assignment(self._services.db)
+                        sso_role_id = Role.USER
+                        sso_role_name = assignment[1] if assignment else None
+                        sso_permissions = octop_keys
+                        sso_policies = list(assignment[3]) if assignment else []
+                else:
+                    logger.info(
+                        "rbac.fallback_local reason=permissions_claim_missing subject=%s",
+                        subject,
+                    )
+                    assignment = (
+                        role_assignment_for(self._services.db, ADMIN_USER_ROLE_ID)
+                        if wants_bypass
+                        else seeded_user_role_assignment(self._services.db)
+                    )
+                    sso_role_id = assignment[0] if assignment else Role.USER
+                    sso_role_name = assignment[1] if assignment else None
+                    sso_permissions = list(assignment[2]) if assignment else []
+                    sso_policies = list(assignment[3]) if assignment else []
                 for attempt in range(3):
                     if (
                         email is not None
@@ -380,15 +452,44 @@ class UserManager:
             )
             role_id = str(row.role)
             permissions = list(row.permissions)
-            # MAMMOTH-PATCH: 已存在用户每次登录校验 is_platform_admin，缺则提权为 admin B类-SSO中台胶水
-            if _claim_wants_admin(claims) and role_id != Role.ADMIN:
-                from octop.infra.db.repos.user_roles import ADMIN_USER_ROLE_ID
+            # MAMMOTH-PATCH: apply ground permissions (keys > local). Local admin
+            # elevate only for platform super_admin bypass — never for OWNER.
+            claim_perms = _claim_permissions(claims)
+            wants_bypass = _claim_wants_local_admin_bypass(claims)
+            if claim_perms is not None:
+                from octop.infra.db.repos.user_roles import (
+                    ADMIN_USER_ROLE_ID,
+                    SEEDED_USER_ROLE_ID,
+                )
 
-                self._services.user_repo.set_role(row.id, ADMIN_USER_ROLE_ID)
-                self._services.user_repo.set_role_name(row.id, "admin")
-                self._services.user_repo.set_permissions(row.id, [])
-                role_id = ADMIN_USER_ROLE_ID
-                permissions = []
+                octop_keys = filter_octop_permission_keys(claim_perms)
+                if wants_bypass:
+                    if role_id != Role.ADMIN:
+                        self._services.user_repo.set_role(row.id, ADMIN_USER_ROLE_ID)
+                        self._services.user_repo.set_role_name(row.id, "admin")
+                    self._services.user_repo.set_permissions(row.id, octop_keys)
+                    role_id = ADMIN_USER_ROLE_ID
+                    permissions = list(octop_keys)
+                else:
+                    if role_id == Role.ADMIN:
+                        self._services.user_repo.set_role(row.id, SEEDED_USER_ROLE_ID)
+                        self._services.user_repo.set_role_name(row.id, "user")
+                        role_id = SEEDED_USER_ROLE_ID
+                    self._services.user_repo.set_permissions(row.id, octop_keys)
+                    permissions = list(octop_keys)
+            else:
+                logger.info(
+                    "rbac.fallback_local reason=permissions_claim_missing user_id=%s",
+                    row.id,
+                )
+                if wants_bypass and role_id != Role.ADMIN:
+                    from octop.infra.db.repos.user_roles import ADMIN_USER_ROLE_ID
+
+                    self._services.user_repo.set_role(row.id, ADMIN_USER_ROLE_ID)
+                    self._services.user_repo.set_role_name(row.id, "admin")
+                    self._services.user_repo.set_permissions(row.id, [])
+                    role_id = ADMIN_USER_ROLE_ID
+                    permissions = []
             user = User(
                 id=row.id,
                 username=row.username,

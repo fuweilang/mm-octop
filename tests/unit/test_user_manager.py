@@ -476,3 +476,120 @@ async def test_boot_loads_users(tmp_path: Path):
         assert not hasattr(user, "agent_manager") or True  # just verify no crash
     finally:
         await manager.shutdown_all()
+
+
+
+async def test_sso_applies_ground_permissions_without_admin(manager: UserManager, caplog):
+    """Ground permissions keys apply; enterprise OWNER must not become local admin."""
+    import logging
+
+    provider_id = _insert_sso_provider(manager)
+    with caplog.at_level(logging.INFO):
+        user = await manager.resolve_or_create_sso_user(
+            provider_id=provider_id,
+            subject="sub-owner",
+            claims={
+                "preferred_username": "owner1",
+                "permissions": ["experts", "portal.admin.access", "providers"],
+                "platform_role": None,
+                "is_platform_admin": False,
+                # org role is not an Octop claim; ensure we never infer admin from it
+            },
+        )
+    assert user.role == Role.USER
+    assert user.permissions == ["experts", "providers"]
+    assert "portal.admin.access" not in user.permissions
+    row = manager.get_row(user.id)
+    assert row is not None
+    assert row.role == "user"
+    assert row.permissions == ["experts", "providers"]
+
+
+async def test_sso_missing_permissions_falls_back_local_with_log(
+    manager: UserManager, caplog
+):
+    import logging
+
+    provider_id = _insert_sso_provider(manager)
+    with caplog.at_level(logging.INFO):
+        user = await manager.resolve_or_create_sso_user(
+            provider_id=provider_id,
+            subject="sub-fallback",
+            claims={"preferred_username": "fallback1"},
+        )
+    assert any("rbac.fallback_local" in r.message for r in caplog.records)
+    assert "channels" in user.permissions  # seeded baseline
+    assert user.role == Role.USER
+
+    # Second login still falls back and keeps local permissions
+    with caplog.at_level(logging.INFO):
+        again = await manager.resolve_or_create_sso_user(
+            provider_id=provider_id,
+            subject="sub-fallback",
+            claims={"preferred_username": "fallback1", "name": "Fallback"},
+        )
+    assert again.permissions == user.permissions
+    assert sum(1 for r in caplog.records if "rbac.fallback_local" in r.message) >= 2
+
+
+async def test_sso_super_admin_may_elevate_local_admin(manager: UserManager):
+    provider_id = _insert_sso_provider(manager)
+    user = await manager.resolve_or_create_sso_user(
+        provider_id=provider_id,
+        subject="sub-super",
+        claims={
+            "preferred_username": "super1",
+            "permissions": ["experts", "portal.admin.roles.write"],
+            "platform_role": "super_admin",
+            "is_platform_admin": True,
+        },
+    )
+    assert user.role == Role.ADMIN
+    assert user.permissions == ["experts"]
+
+
+async def test_sso_platform_admin_is_not_local_admin(manager: UserManager):
+    """is_platform_admin alone (platform_admin role) must not elevate Octop admin."""
+    provider_id = _insert_sso_provider(manager)
+    user = await manager.resolve_or_create_sso_user(
+        provider_id=provider_id,
+        subject="sub-padmin",
+        claims={
+            "preferred_username": "padmin1",
+            "permissions": ["experts", "tasks"],
+            "platform_role": "platform_admin",
+            "is_platform_admin": True,
+        },
+    )
+    assert user.role == Role.USER
+    assert user.permissions == ["experts", "tasks"]
+
+
+async def test_sso_relogin_updates_permissions_and_demotes_non_super(
+    manager: UserManager,
+):
+    provider_id = _insert_sso_provider(manager)
+    first = await manager.resolve_or_create_sso_user(
+        provider_id=provider_id,
+        subject="sub-relogin",
+        claims={
+            "preferred_username": "relogin1",
+            "permissions": ["experts", "providers"],
+            "platform_role": "super_admin",
+            "is_platform_admin": True,
+        },
+    )
+    assert first.role == Role.ADMIN
+
+    second = await manager.resolve_or_create_sso_user(
+        provider_id=provider_id,
+        subject="sub-relogin",
+        claims={
+            "preferred_username": "relogin1",
+            "permissions": ["experts"],
+            "platform_role": None,
+            "is_platform_admin": False,
+        },
+    )
+    assert second.role == Role.USER
+    assert second.permissions == ["experts"]

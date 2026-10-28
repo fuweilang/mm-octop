@@ -28,11 +28,6 @@ export default function ClientDownloadLink({ compact }: { compact?: boolean }) {
         label: (
           <span className={styles.downloadMenuItem}>
             {t(PLATFORM_LABEL_KEY[id])}
-            {id === primary ? (
-              <span className={styles.downloadRecommended}>
-                {t("nav.downloadRecommended")}
-              </span>
-            ) : null}
           </span>
         ),
       })),
@@ -40,7 +35,7 @@ export default function ClientDownloadLink({ compact }: { compact?: boolean }) {
         window.location.assign(clientDownloadUrl(key as ClientPlatform));
       },
     };
-  }, [primary, t]);
+  }, [t]);
 
   if (compact) {
     return (

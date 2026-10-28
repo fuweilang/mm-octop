@@ -39,7 +39,16 @@
     "winGroup": "窗口控制",
     "winMin": "最小化",
     "winMax": "最大化",
-    "winClose": "关闭"
+    "winClose": "关闭",
+    "status.checking_mammoth_update": "正在检查猛犸更新…",
+    "status.mammoth_up_to_date": "运行环境已是最新（%s）",
+    "status.mammoth_downloading": "正在下载运行环境 %s…",
+    "status.mammoth_verifying": "正在校验下载包…",
+    "status.mammoth_installing": "正在安装运行环境 %s…",
+    "status.mammoth_restarting": "正在热重启猛犸AI服务…",
+    "status.mammoth_shell_newer": "桌面壳有新版本 %s，请从官网重新下载安装包（壳内静默替换尚未支持）",
+    "error.mammoth_update_failed": "猛犸更新失败：%s",
+    "error.mammoth_sha_mismatch": "下载包校验失败（sha256 不匹配）"
   },
   "en": {
     "status.connecting": "Connecting to 猛犸AI…",
@@ -81,6 +90,15 @@
     "winGroup": "Window controls",
     "winMin": "Minimize",
     "winMax": "Maximize",
-    "winClose": "Close"
+    "winClose": "Close",
+    "status.checking_mammoth_update": "Checking for Mammoth updates…",
+    "status.mammoth_up_to_date": "Runtime is up to date (%s)",
+    "status.mammoth_downloading": "Downloading runtime %s…",
+    "status.mammoth_verifying": "Verifying the download…",
+    "status.mammoth_installing": "Installing runtime %s…",
+    "status.mammoth_restarting": "Hot-restarting the 猛犸AI service…",
+    "status.mammoth_shell_newer": "Desktop shell %s is available — re-download the installer from the website (in-app shell replace is not supported yet)",
+    "error.mammoth_update_failed": "Mammoth update failed: %s",
+    "error.mammoth_sha_mismatch": "Download checksum failed (sha256 mismatch)"
   }
 }

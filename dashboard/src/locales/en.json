@@ -229,7 +229,6 @@
     "middle": "Enterprise console",
     "downloadClient": "Download client",
     "downloadOther": "Other versions",
-    "downloadRecommended": "Recommended",
     "downloadMacArm": "macOS (Apple silicon)",
     "downloadMacIntel": "macOS (Intel)",
     "downloadWindows": "Windows",
@@ -4144,7 +4143,9 @@
     "ssoUnbindSuccess": "Single sign-on unlinked",
     "ssoBindFailed": "Could not start account linking",
     "ssoUnbindFailed": "Could not unlink single sign-on",
-    "ssoPopupBlocked": "Allow pop-ups to continue with single sign-on."
+    "ssoPopupBlocked": "Allow pop-ups to continue with single sign-on.",
+    "versionUpdate": "Version update",
+    "versionUpdateStarted": "Checking for version updates…"
   },
   "user": {
     "title": "User Settings",

@@ -229,7 +229,6 @@
     "middle": "企业控制台",
     "downloadClient": "下载客户端",
     "downloadOther": "下载其它版本",
-    "downloadRecommended": "推荐",
     "downloadMacArm": "macOS（Apple 芯片）",
     "downloadMacIntel": "macOS（Intel 芯片）",
     "downloadWindows": "Windows",
@@ -4144,7 +4143,9 @@
     "ssoUnbindSuccess": "已解除单点登录",
     "ssoBindFailed": "无法开始绑定",
     "ssoUnbindFailed": "无法解除绑定",
-    "ssoPopupBlocked": "请允许弹出窗口以继续单点登录。"
+    "ssoPopupBlocked": "请允许弹出窗口以继续单点登录。",
+    "versionUpdate": "版本更新",
+    "versionUpdateStarted": "正在检查版本更新…"
   },
   "user": {
     "title": "用户设置",

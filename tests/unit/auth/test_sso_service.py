@@ -539,3 +539,44 @@ def test_desktop_password_login_rejects_bad_credentials(
             service._desktop_oidc_provider(),
             "http://127.0.0.1:9",
         )
+
+
+
+def test_merge_userinfo_claims_overlays_rbac_fields(service: SsoService) -> None:
+    claims = {"sub": "u1", "permissions": ["experts"]}
+    token = {"access_token": "atk", "id_token": "ignored"}
+    discovery = {"userinfo_endpoint": "https://issuer.example/userinfo"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://issuer.example/userinfo"
+        assert request.headers.get("Authorization") == "Bearer atk"
+        return httpx.Response(
+            200,
+            json={
+                "permissions": ["experts", "portal.admin.access", "providers"],
+                "platform_role": "platform_admin",
+                "is_platform_admin": True,
+                "tenant_id": "t1",
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        service._merge_userinfo_claims(
+            claims, token=token, discovery=discovery, client=client
+        )
+    assert claims["permissions"] == ["experts", "portal.admin.access", "providers"]
+    assert claims["platform_role"] == "platform_admin"
+    assert claims["is_platform_admin"] is True
+    assert claims["tenant_id"] == "t1"
+
+
+def test_merge_userinfo_claims_skips_without_access_token(service: SsoService) -> None:
+    claims = {"sub": "u1"}
+    with httpx.Client() as client:
+        service._merge_userinfo_claims(
+            claims,
+            token={"id_token": "only"},
+            discovery={"userinfo_endpoint": "https://issuer.example/userinfo"},
+            client=client,
+        )
+    assert "permissions" not in claims

@@ -6,6 +6,7 @@ import {
   CHROME_END_PAD_ATTR,
   chromeEndPadValue,
   emitDesktopWindowAction,
+  emitDesktopMammothUpdate,
   installDesktopWindowDrag,
   isDesktopShell,
   resolveDesktopChromeStyle,
@@ -129,6 +130,16 @@ describe("desktopChrome", () => {
     } as Window);
     expect(emitted).toBe(true);
     expect(invoke).toHaveBeenCalledWith("wails:event:emit:desktop:minimise");
+  });
+
+  it("emits mammoth portable update event", () => {
+    const invoke = vi.fn();
+    expect(
+      emitDesktopMammothUpdate({ _wails: { invoke } } as Window),
+    ).toBe(true);
+    expect(invoke).toHaveBeenCalledWith(
+      "wails:event:emit:desktop:mammoth-update",
+    );
   });
 
   it("arms drag on --wails-draggable regions and the top chrome strip", () => {

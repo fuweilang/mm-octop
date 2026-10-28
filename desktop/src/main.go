@@ -33,6 +33,7 @@ type App struct {
 	cmd            *exec.Cmd
 	mu             sync.Mutex
 	quitting       bool
+	updating       bool // MAMMOTH-PATCH: portable self-update in flight
 	dashboardURL   string
 
 	trayClickMu    sync.Mutex
@@ -396,6 +397,10 @@ func main() {
 	})
 	app.Event.On("desktop:close", func(_ *application.CustomEvent) {
 		api.hideToTray()
+	})
+	// MAMMOTH-PATCH: AvatarDropdown「版本更新」→ portable hot-restart.
+	app.Event.On("desktop:mammoth-update", func(_ *application.CustomEvent) {
+		api.beginMammothUpdate()
 	})
 	installDragOverlay := func(_ *application.WindowEvent) { api.scheduleDragOverlay() }
 	win.OnWindowEvent(events.Mac.WebViewDidFinishNavigation, installDragOverlay)
