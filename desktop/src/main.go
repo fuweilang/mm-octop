@@ -227,6 +227,10 @@ func (a *App) boot() {
 			break
 		}
 	}
+	// keepAlternate stays true only while every other instance of ours is gone;
+	// otherwise the alternate port must stay remembered or a leftover would
+	// never be looked at again.
+	keepAlternate := true
 	if replaced {
 		// Runtime files on disk just changed; never attach to a stale process
 		// that still serves the previous code from memory.
@@ -244,14 +248,13 @@ func (a *App) boot() {
 			// Only one instance may serve ~/.octop; drop an instance of ours on
 			// another candidate. A service that merely happens to be an Octop
 			// (docker proxy, dev venv) is left alone.
-			if hasPort {
-				for _, candidate := range candidates {
-					if candidate != runningPort && portRunsFrom(candidate, root) {
-						stopListeningOctop(host, candidate)
-					}
-				}
+			if hasPort && !stopOurInstances(host, candidates, runningPort, root) {
+				log.Printf("desktop: a second instance of ours is still up; keeping port %d remembered", runningPort)
+				keepAlternate = false
 			}
-			a.rememberListenPort(runningPort, configured)
+			if keepAlternate {
+				a.rememberListenPort(runningPort, configured)
+			}
 			a.showDashboard(existing)
 			return
 		}
@@ -267,6 +270,10 @@ func (a *App) boot() {
 		a.setStatus(desktopText(locale, copyStatusReplacingStale))
 		if hasPort {
 			stopListeningOctop(host, runningPort)
+			if !stopOurInstances(host, candidates, runningPort, root) {
+				log.Printf("desktop: a second instance of ours is still up; keeping port %d remembered", runningPort)
+				keepAlternate = false
+			}
 			// Restart on the same port so the origin (and the dashboard login)
 			// survives the swap.
 			preferred = runningPort
@@ -274,8 +281,8 @@ func (a *App) boot() {
 	} else {
 		// No healthy instance anywhere: whatever still holds these ports is a
 		// half-started leftover of ours. Clear it now so a stale python is not
-		// mistaken for a third-party program below. Foreign listeners are
-		// never touched by stopListeningOctop.
+		// mistaken for a third-party program below. Only processes started from
+		// this portable tree are stopped.
 		for _, candidate := range candidates {
 			stopListeningOctop(host, candidate)
 		}
@@ -340,7 +347,9 @@ func (a *App) boot() {
 		a.ownsListenPort = true
 		a.mu.Unlock()
 	}
-	a.rememberListenPort(port, configured)
+	if keepAlternate {
+		a.rememberListenPort(port, configured)
+	}
 	a.showDashboard(base)
 }
 

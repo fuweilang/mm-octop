@@ -405,6 +405,24 @@ func TestPortRunsFromIgnoresForeignListener(t *testing.T) {
 	}
 }
 
+func TestStopOurInstancesLeavesForeignPortsAlone(t *testing.T) {
+	t.Setenv("OCTOP_HOME", t.TempDir())
+	srv := httptest.NewServer(http.NotFoundHandler())
+	defer srv.Close()
+	port := srv.Listener.Addr().(*net.TCPAddr).Port
+
+	// Nothing of ours is on the port, so the report must stay "cleared" and the
+	// listener must survive.
+	if !stopOurInstances("127.0.0.1", []int{port}, 0, portableDir()) {
+		t.Fatal("a foreign listener is not a leftover of ours")
+	}
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("foreign listener was killed: %v", err)
+	}
+	_ = resp.Body.Close()
+}
+
 func freeTCPPort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

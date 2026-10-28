@@ -433,3 +433,25 @@ func portRunsFrom(port int, dir string) bool {
 	}
 	return true
 }
+
+// stopOurInstances terminates instances of ours on the candidate ports except
+// keepPort, and reports whether none is left behind. If one of our processes is
+// still up the report is false, so the caller keeps remembering the port rather
+// than dropping it from the candidate set forever.
+func stopOurInstances(host string, candidates []int, keepPort int, root string) bool {
+	cleared := true
+	for _, candidate := range candidates {
+		if candidate == keepPort || candidate < 1 || candidate > 65535 {
+			continue
+		}
+		if portRunsFrom(candidate, root) {
+			stopListeningOctop(host, candidate)
+		}
+		for _, pid := range listeningPIDs(candidate) {
+			if processRunsFrom(pid, root) {
+				cleared = false
+			}
+		}
+	}
+	return cleared
+}
