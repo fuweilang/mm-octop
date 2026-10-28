@@ -2,26 +2,12 @@ export type UiLocale = "zh" | "en";
 
 export const UI_LOCALE_STORAGE_KEY = "octop:ui-locale";
 
-/** Map browser language tags to a supported dashboard locale. */
+/**
+ * 界面只维护中文（zh-only-ui）。浏览器语言一律按中文处理：
+ * 只有用户主动切到 en（``octop:ui-locale``）或服务端下发 en 时才走英文。
+ */
 export function detectBrowserLocale(): UiLocale {
-  if (typeof navigator === "undefined") return "en";
-
-  const candidates =
-    navigator.languages?.length > 0
-      ? navigator.languages
-      : [navigator.language];
-
-  for (const raw of candidates) {
-    const lang = raw?.toLowerCase() ?? "";
-    if (lang.startsWith("zh")) return "zh";
-    if (lang.startsWith("en")) return "en";
-  }
-
-  const primary = navigator.language?.toLowerCase() ?? "";
-  if (primary.startsWith("zh")) return "zh";
-  if (primary.startsWith("en")) return "en";
-
-  return "en";
+  return "zh";
 }
 
 export function normalizeUiLocale(raw: string | null | undefined): UiLocale {

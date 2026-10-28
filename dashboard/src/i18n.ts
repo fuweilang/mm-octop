@@ -84,6 +84,9 @@ export function initI18n(): Promise<void> {
   if (!initPromise) {
     initPromise = (async () => {
       const initial = resolveInitialLocale();
+      // zh-only-ui：只维护中文，缺 key 时回退到「另一门语言」而不是固定 en，
+      // 这样英文界面缺条目会显示中文，不会露出裸 key。用户存过的语言 / 服务端
+      // 下发的 locale 仍然优先（见 applyUserLocale）。
       const fallback: UiLocale = initial === "zh" ? "en" : "zh";
       const primaryBundle = await loadLocaleBundle(initial);
 

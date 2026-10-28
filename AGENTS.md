@@ -288,6 +288,8 @@ i18n/
 
 **Adding strings (checklist)**
 
+0. **界面只维护中文（zh-only-ui）**：新增文案只写 `dashboard/src/locales/zh.json`，`en.json` 视为只读存档，不要再补英文；桌面端 `desktop/src/assets/copy.json` 同理只加中文条目。默认语言固定为中文（`detectBrowserLocale()` 不识别浏览器语言），用户主动切到 `en` 或服务端下发 `en` 时才走英文，缺 key 由 `fallbackLng` 回退到中文，不会露裸 key。
+
 1. Add the same key to `en.json` and `zh.json` under the right namespace (`slash`, `errors`, `tools`, `channel`, …).
 2. Add or extend a `domains/*.py` helper when the namespace is used in multiple call sites.
 3. If the key is an `ErrorCode` or `apiErrors` entry, update both backend `errors` and dashboard `apiErrors`.

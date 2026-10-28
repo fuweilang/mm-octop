@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   detectBrowserLocale,
-  readStoredUiLocale,
   resolveInitialLocale,
   speechLocaleFromUi,
   storeUiLocale,
@@ -14,32 +13,23 @@ describe("localePrefs", () => {
     vi.unstubAllGlobals();
   });
 
-  it("detectBrowserLocale prefers zh when browser lists Chinese first", () => {
+  it("detectBrowserLocale 默认中文，不看浏览器语言", () => {
     vi.stubGlobal("navigator", {
       language: "en-US",
-      languages: ["zh-CN", "en-US"],
+      languages: ["en-US", "zh-CN"],
     });
     expect(detectBrowserLocale()).toBe("zh");
   });
 
-  it("detectBrowserLocale prefers en when browser lists English first", () => {
+  it("resolveInitialLocale prefers en only when the user stored it", () => {
     vi.stubGlobal("navigator", {
       language: "zh-CN",
-      languages: ["en-US", "zh-CN"],
+      languages: ["zh-CN"],
     });
-    expect(detectBrowserLocale()).toBe("en");
-  });
-
-  it("resolveInitialLocale uses stored preference over browser", () => {
-    vi.stubGlobal("navigator", {
-      language: "en-US",
-      languages: ["en-US"],
-    });
-    storeUiLocale("zh");
-    expect(resolveInitialLocale()).toBe("zh");
-    expect(readStoredUiLocale()).toBe("zh");
-    localStorage.removeItem(UI_LOCALE_STORAGE_KEY);
+    storeUiLocale("en");
     expect(resolveInitialLocale()).toBe("en");
+    localStorage.removeItem(UI_LOCALE_STORAGE_KEY);
+    expect(resolveInitialLocale()).toBe("zh");
   });
 
   it("speechLocaleFromUi maps UI locale to STT BCP-47 tags", () => {
