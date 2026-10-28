@@ -331,7 +331,9 @@ func (a *App) runMammothUpdate() {
 func (a *App) hotRestartOctop(locale Locale, root, host string, preferred int) error {
 	configured := preferred
 	preferred = a.preferredPort(host, configured)
-	port, err := chooseFreePort(host, preferred)
+	// allowAlternate=true: an update restart must not be blocked by a port
+	// conflict (the target port itself is still tried first).
+	port, err := chooseStartPort(host, preferred, true)
 	if err != nil {
 		return err
 	}

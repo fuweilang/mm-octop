@@ -153,8 +153,10 @@
       };
       Events.On("desktop:port-blocked", showAltPort);
       // The event is fire-and-forget; re-read the state so a reload still
-      // shows the button after boot already reported the conflict.
+      // shows the reason and the button after boot already reported it.
       if (!settingsMode && (await call("IsPortBlocked").catch(() => false))) {
+        const reason = await call("PortBlockedMessage").catch(() => "");
+        if (reason) document.getElementById("status").textContent = reason;
         showAltPort();
       }
       document

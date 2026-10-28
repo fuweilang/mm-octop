@@ -45,10 +45,12 @@ type App struct {
 	// after a port conflict). Normal boots always try the configured port.
 	alternatePort bool
 	// portBlocked mirrors the last reportPortOccupied so the loading page can
-	// re-show the "another port" button after a reload (the event is fire-and-forget).
-	portBlocked bool
-	legacyOnce  sync.Once
-	legacyApp   string
+	// re-show the "another port" button and its message after a reload
+	// (the event is fire-and-forget).
+	portBlocked    bool
+	portBlockedMsg string
+	legacyOnce     sync.Once
+	legacyApp      string
 }
 
 func (a *App) ServiceName() string { return "desktop" }
@@ -213,20 +215,45 @@ func (a *App) boot() {
 	a.mu.Unlock()
 	host, configured := resolveListen()
 	preferred := a.preferredPort(host, configured)
+	// Probe both the port we would use and the configured one. Looking only at
+	// `preferred` lets a remembered alternate hide an instance already running
+	// on the configured port, and two Octop processes would share one ~/.octop
+	// SQLite.
+	candidates := []int{preferred}
+	if configured != preferred {
+		candidates = append(candidates, configured)
+	}
+	existing := ""
+	for _, candidate := range candidates {
+		if found := findRunningDashboard(host, candidate); found != "" {
+			existing = found
+			break
+		}
+	}
 	if replaced {
 		// Runtime files on disk just changed; never attach to a stale process
 		// that still serves the previous code from memory.
 		if saved, ok := readDesktopPort(); ok {
 			stopListeningOctop(host, saved)
 		}
-		stopListeningOctop(host, preferred)
-	} else if existing := findRunningDashboard(host, preferred); existing != "" {
+		for _, candidate := range candidates {
+			stopListeningOctop(host, candidate)
+		}
+	} else if existing != "" {
+		runningPort, _ := portFromDashboardURL(existing)
 		if dashboardIsCurrent(existing, portableVersion(root)) {
 			a.setStatus(desktopText(locale, copyStatusUsingExisting))
 			if err := waitHealth(locale, existing, 30*time.Second); err != nil {
 				a.setStatus(err.Error())
 				return
 			}
+			// Only one instance may serve ~/.octop; drop the other candidate.
+			for _, candidate := range candidates {
+				if candidate != runningPort {
+					stopListeningOctop(host, candidate)
+				}
+			}
+			a.rememberListenPort(runningPort, configured)
 			a.showDashboard(existing)
 			return
 		}
@@ -240,17 +267,28 @@ func (a *App) boot() {
 			portableVersion(root),
 		)
 		a.setStatus(desktopText(locale, copyStatusReplacingStale))
-		if port, ok := portFromDashboardURL(existing); ok {
-			stopListeningOctop(host, port)
+		if runningPort > 0 {
+			stopListeningOctop(host, runningPort)
 			// Restart on the same port so the origin (and the dashboard login)
 			// survives the swap.
-			preferred = port
+			preferred = runningPort
 		}
 	}
 	a.mu.Lock()
 	allowAlternate := a.alternatePort
 	a.mu.Unlock()
 	port, err := chooseStartPort(host, preferred, allowAlternate)
+	if err != nil {
+		var occupied portOccupiedError
+		if errors.As(err, &occupied) {
+			// Before blaming another program, try to clear a leftover of our
+			// own: a crashed or half-started instance never answers
+			// /api/health, so it looks like a foreign program. Only a process
+			// started from this portable tree is touched.
+			stopListeningOctop(host, occupied.Port)
+			port, err = chooseStartPort(host, preferred, allowAlternate)
+		}
+	}
 	if err != nil {
 		var occupied portOccupiedError
 		var busy noFreePortError
@@ -265,10 +303,16 @@ func (a *App) boot() {
 		default:
 			a.setStatus(err.Error())
 		}
+		// Release the one-shot flag so the button keeps working after a retry
+		// that also failed.
+		a.mu.Lock()
+		a.alternatePort = false
+		a.mu.Unlock()
 		return
 	}
 	a.mu.Lock()
 	a.portBlocked = false
+	a.portBlockedMsg = ""
 	cmd, err := startOctop(root, port)
 	a.cmd = cmd
 	a.mu.Unlock()
@@ -311,18 +355,23 @@ func (a *App) preferredPort(host string, configured int) int {
 }
 
 // rememberListenPort persists the port we actually started on when it differs
-// from config.json, so the next launch reuses the same origin.
+// from config.json, so the next launch reuses the same origin. Returning to the
+// configured port clears the override.
 func (a *App) rememberListenPort(port, configured int) {
-	if a.store == nil || port == configured {
+	if a.store == nil {
 		return
+	}
+	wanted := 0
+	if port != configured {
+		wanted = port
 	}
 	s := a.store.get()
-	if s.AlternatePort == port {
+	if s.AlternatePort == wanted {
 		return
 	}
-	s.AlternatePort = port
+	s.AlternatePort = wanted
 	if err := a.store.save(s); err != nil {
-		log.Printf("desktop: remember alternate port %d: %v", port, err)
+		log.Printf("desktop: remember listen port %d: %v", port, err)
 	}
 }
 
@@ -334,6 +383,7 @@ func (a *App) reportPortOccupied(locale Locale, port int) {
 	log.Printf("desktop: %s", msg)
 	a.mu.Lock()
 	a.portBlocked = true
+	a.portBlockedMsg = msg
 	a.mu.Unlock()
 	a.setStatus(msg)
 	if a.app != nil {
@@ -346,6 +396,14 @@ func (a *App) IsPortBlocked() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.portBlocked
+}
+
+// PortBlockedMessage is the localized reason shown next to the "start on
+// another port" button; "" when there is no conflict.
+func (a *App) PortBlockedMessage() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.portBlockedMsg
 }
 
 // RetryWithAlternatePort starts the service on the next free port. Only

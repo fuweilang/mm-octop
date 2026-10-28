@@ -55,7 +55,7 @@
     "warn.legacy_autostart": "已停止旧版「猛犸AI」的开机自启。建议在设置里定位并卸载旧版，避免旧进程再次占用 8088。",
     "altPort": "换端口启动（需重新登录）",
     "legacyTitle": "旧版「猛犸AI」",
-    "legacyHint": "检测到仍安装，旧版会抢先占用 8088。已停止它的开机自启。",
+    "legacyHint": "检测到仍安装，旧版会抢先占用 8088。建议卸载旧版。",
     "legacyReveal": "定位旧版"
   },
   "en": {
@@ -114,7 +114,7 @@
     "warn.legacy_autostart": "Disabled the legacy 猛犸AI login item. Remove the old app from Settings to stop it reclaiming port 8088.",
     "altPort": "Start on another port (sign-in required)",
     "legacyTitle": "Legacy 猛犸AI",
-    "legacyHint": "Still installed and able to grab port 8088. Its login item has been disabled.",
+    "legacyHint": "Still installed and able to grab port 8088. Removing it avoids conflicts.",
     "legacyReveal": "Show legacy app"
   }
 }

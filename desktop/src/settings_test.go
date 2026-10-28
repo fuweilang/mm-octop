@@ -78,4 +78,11 @@ func TestRememberListenPortPersistsOnlyAlternates(t *testing.T) {
 	if reloaded := loadSettings(); reloaded.AlternatePort != 8090 {
 		t.Fatalf("alternate port did not survive a reload: %d", reloaded.AlternatePort)
 	}
+
+	// Back on the configured port: drop the override so we do not fight the
+	// canonical origin forever.
+	app.rememberListenPort(8088, 8088)
+	if got := store.get().AlternatePort; got != 0 {
+		t.Fatalf("returning to the configured port must clear the override, got %d", got)
+	}
 }

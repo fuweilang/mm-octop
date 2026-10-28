@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -368,6 +369,28 @@ func TestProcessRunsFromMatchesOwnExecutable(t *testing.T) {
 	}
 	if processRunsFrom(os.Getpid(), filepath.Join(t.TempDir(), "nowhere")) {
 		t.Fatal("an unrelated directory must not match")
+	}
+}
+
+func TestReportPortOccupiedExposesState(t *testing.T) {
+	app := &App{}
+	app.reportPortOccupied(LocaleZH, 8088)
+
+	if !app.IsPortBlocked() {
+		t.Fatal("the loading page must be able to re-read the conflict state")
+	}
+	if msg := app.PortBlockedMessage(); !strings.Contains(msg, "8088") {
+		t.Fatalf("message %q must name the occupied port", msg)
+	}
+}
+
+func TestRetryWithAlternatePortIsOneShot(t *testing.T) {
+	app := &App{}
+	// boot() is stubbed out only for the flag semantics: a second concurrent
+	// request must be ignored while one is already in flight.
+	app.alternatePort = true
+	if app.RetryWithAlternatePort() {
+		t.Fatal("a second alternate-port retry must be ignored")
 	}
 }
 
