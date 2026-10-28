@@ -25,18 +25,21 @@
 FROM node:20-slim AS frontend-builder
 
 ARG NODE_MAX_OLD_SPACE_SIZE=2048
-ARG NPM_REGISTRY=
+ARG NPM_REGISTRY=https://mirrors.cloud.tencent.com/npm/
+ARG PNPM_VERSION=10
 WORKDIR /build/dashboard
 
-COPY dashboard/package.json dashboard/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
-    && npm ci --prefer-offline --no-audit
+COPY dashboard/package.json dashboard/pnpm-lock.yaml dashboard/.npmrc ./
+RUN --mount=type=cache,target=/root/.cache/pnpm \
+    npm config set registry "$NPM_REGISTRY" \
+    && npm install -g "pnpm@${PNPM_VERSION}" --no-audit --no-fund \
+    && pnpm config set registry "$NPM_REGISTRY" \
+    && pnpm install --frozen-lockfile --prefer-offline
 
 COPY dashboard/ ./
 
 RUN mkdir -p ../src/octop/dashboard
-RUN NODE_ENV=production NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npx vite build
+RUN NODE_ENV=production NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" pnpm exec vite build
 
 # ---------------------------------------------------------------------------
 # 阶段 2 — Python 运行时 + 预构建前端 + 全部附加组件
@@ -61,14 +64,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple \
     PIP_TRUSTED_HOST=mirrors.aliyun.com
 
-ARG APT_MIRROR=
+ARG APT_MIRROR=mirrors.cloud.tencent.com
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    if [ -n "$APT_MIRROR" ]; then \
-        printf 'Types: deb\nURIs: https://%s/debian\nSuites: trixie trixie-updates\nComponents: main contrib non-free non-free-firmware\n\nTypes: deb\nURIs: https://%s/debian-security\nSuites: trixie-security\nComponents: main contrib non-free non-free-firmware\n' \
-            "$APT_MIRROR" "$APT_MIRROR" > /etc/apt/sources.list.d/debian.sources; \
-    fi \
+    printf 'Types: deb\nURIs: https://%s/debian\nSuites: trixie trixie-updates\nComponents: main contrib non-free non-free-firmware\n\nTypes: deb\nURIs: https://%s/debian-security\nSuites: trixie-security\nComponents: main contrib non-free non-free-firmware\n' \
+        "$APT_MIRROR" "$APT_MIRROR" > /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         libffi-dev \
@@ -94,11 +95,11 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # 安装项目与附加组件（Playwright Chromium 不预装，控制台可按需下载）。
 # local-embedding / knowledge-ocr 与 desktop 一起装进镜像层，避免运行时
 # 装进 overlay 后在容器重建时丢失。
-# UV_INDEX_URL 首选阿里云镜像加速；UV_DEFAULT_INDEX 保留 PyPI 作为兜底，
-# 避免新发布的包（如 octop-harness 0.9.16）尚未同步到镜像时构建失败。
+# UV_INDEX_URL 首选阿里云镜像加速；UV_DEFAULT_INDEX 用腾讯云镜像兜底
+# （两者都是国内源，不再回源 pypi.org）。
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv /app/.venv \
-    && UV_DEFAULT_INDEX=https://pypi.org/simple \
+    && UV_DEFAULT_INDEX=https://mirrors.cloud.tencent.com/pypi/simple \
        UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple \
        UV_INSECURE_HOST=mirrors.aliyun.com \
        uv pip install --python /app/.venv ".[desktop,local-embedding,knowledge-ocr]" \

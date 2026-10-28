@@ -35,19 +35,22 @@
 # ---------------------------------------------------------------------------
 FROM node:20-slim AS frontend-builder
 
-ARG NPM_REGISTRY=
+ARG NPM_REGISTRY=https://mirrors.cloud.tencent.com/npm/
 # Node heap ceiling for the vite build. Lower this (e.g. 1024) on low-memory
 # build hosts (< 4G RAM) to avoid OOM kills — the value only caps the max,
 # it is not pre-allocated.
 ARG NODE_MAX_OLD_SPACE_SIZE=2048
+ARG PNPM_VERSION=10
 WORKDIR /build/dashboard
 
-COPY dashboard/package.json dashboard/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+COPY dashboard/package.json dashboard/pnpm-lock.yaml dashboard/.npmrc ./
+RUN --mount=type=cache,target=/root/.cache/pnpm,sharing=locked \
     set -eu; \
-    if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi; \
-    npm ci --no-audit \
-    || { echo "npm ci failed — retrying clean"; rm -rf node_modules; npm ci --no-audit; }; \
+    npm config set registry "$NPM_REGISTRY"; \
+    npm install -g "pnpm@${PNPM_VERSION}" --no-audit --no-fund; \
+    pnpm config set registry "$NPM_REGISTRY"; \
+    pnpm install --frozen-lockfile \
+    || { echo "pnpm install failed — retrying clean"; rm -rf node_modules; pnpm install --frozen-lockfile; }; \
     test -x node_modules/.bin/vite
 
 COPY dashboard/ ./
@@ -55,7 +58,7 @@ COPY dashboard/ ./
 RUN mkdir -p ../src/octop/dashboard
 
 # 镜像构建跳过完整 tsc；生产打包由 vite/esbuild 完成（使用 lockfile 中的 vite，不用 npx）
-RUN NODE_ENV=production NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run build:docker
+RUN NODE_ENV=production NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" pnpm run build:docker
 
 
 # ---------------------------------------------------------------------------
@@ -79,16 +82,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never
 
-ARG PIP_INDEX_URL=
-ARG PIP_TRUSTED_HOST=
-ARG APT_MIRROR=
+ARG PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
+ARG PIP_TRUSTED_HOST=mirrors.cloud.tencent.com
+ARG APT_MIRROR=mirrors.cloud.tencent.com
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    if [ -n "$APT_MIRROR" ]; then \
-        printf 'Types: deb\nURIs: https://%s/debian\nSuites: trixie trixie-updates\nComponents: main contrib non-free non-free-firmware\n\nTypes: deb\nURIs: https://%s/debian-security\nSuites: trixie-security\nComponents: main contrib non-free non-free-firmware\n' \
-            "$APT_MIRROR" "$APT_MIRROR" > /etc/apt/sources.list.d/debian.sources; \
-    fi \
+    printf 'Types: deb\nURIs: https://%s/debian\nSuites: trixie trixie-updates\nComponents: main contrib non-free non-free-firmware\n\nTypes: deb\nURIs: https://%s/debian-security\nSuites: trixie-security\nComponents: main contrib non-free non-free-firmware\n' \
+        "$APT_MIRROR" "$APT_MIRROR" > /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         libffi-dev \

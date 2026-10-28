@@ -183,8 +183,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Set up pnpm (frontend build)
+        if: steps.wheel.outputs.source == 'build'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Build Octop wheel from current source
         if: steps.wheel.outputs.source == 'build'
@@ -192,8 +196,8 @@ jobs:
           set -e
           echo "=== build frontend ==="
           cd dashboard
-          npm ci --prefer-offline --no-audit
-          NODE_ENV=production NODE_OPTIONS="--max-old-space-size=4096" npm run build
+          pnpm install --frozen-lockfile --prefer-offline
+          NODE_ENV=production NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
           cd ..
           echo "=== frontend output ==="
           ls -la src/octop/dashboard | head -20
@@ -303,8 +307,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Set up pnpm (frontend build)
+        if: steps.wheel.outputs.source == 'build'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Build Octop wheel from current source
         if: steps.wheel.outputs.source == 'build'
@@ -312,8 +320,8 @@ jobs:
           set -e
           echo "=== build frontend ==="
           cd dashboard
-          npm ci --prefer-offline --no-audit
-          NODE_ENV=production NODE_OPTIONS="--max-old-space-size=4096" npm run build
+          pnpm install --frozen-lockfile --prefer-offline
+          NODE_ENV=production NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
           cd ..
           echo "=== frontend output ==="
           ls -la src/octop/dashboard | head -20

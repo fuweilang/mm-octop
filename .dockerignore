@@ -47,3 +47,9 @@ node_modules
 *.log
 logs
 agent-transcripts
+
+# 构建上下文瘦身：桌面端产物（约 5G）、上游仓库镜像、宿主 venv 与镜像无关。
+# 不加这几条时 docker 每次 build 都要先把整个上下文传给 buildkit，
+# 单次构建光传输就是分钟级。
+/desktop
+/.git.upstream

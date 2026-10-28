@@ -302,13 +302,13 @@ _uv_pip_install_with_mirror_fallback() {
         local -a args=(
             --python "$OCTOP_VENV/bin/python"
             --quiet
-            --index-url https://pypi.org/simple
+            --index-url https://mirrors.cloud.tencent.com/pypi/simple
         )
         if [ -n "$mirror" ]; then
             args+=(--extra-index-url "$mirror")
             info "Trying dependency mirror: $mirror"
         else
-            info "Trying official PyPI only (no mirror)..."
+            info "Trying PyPI official index as last resort..."
         fi
 
         if UV_SYSTEM_PYTHON=0 uv pip install "$package" "${args[@]}" "$@"; then
@@ -604,14 +604,14 @@ prepare_console() {
         return
     fi
 
-    if ! command -v npm &>/dev/null; then
-        warn "npm not found - skipping the frontend build."
-        warn "Install Node.js and re-run, or build manually: cd dashboard && npm ci && npm run build"
+    if ! command -v pnpm &>/dev/null; then
+        warn "pnpm not found - skipping the frontend build."
+        warn "Install Node.js + pnpm and re-run, or build manually: cd dashboard && pnpm install --frozen-lockfile && pnpm run build"
         return
     fi
 
-    info "Building the frontend (npm ci && npm run build)..."
-    (cd "$repo_dir/dashboard" && npm ci && npm run build)
+    info "Building the frontend (pnpm install && pnpm run build)..."
+    (cd "$repo_dir/dashboard" && pnpm install --frozen-lockfile && pnpm run build)
     if [ -f "$console_dest/index.html" ]; then
         _CONSOLE_AVAILABLE=1
         info "Frontend build succeeded"
@@ -672,9 +672,9 @@ else
 
     info "Installing ${PACKAGE} from PyPI..."
     if [ -n "${_EXTRA_MIRROR:-}" ]; then
-        info "Primary index: https://pypi.org/simple  preferred mirror: $_EXTRA_MIRROR"
+        info "Primary index: https://mirrors.cloud.tencent.com/pypi/simple  preferred mirror: $_EXTRA_MIRROR"
     else
-        info "Primary index: https://pypi.org/simple"
+        info "Primary index: https://mirrors.cloud.tencent.com/pypi/simple"
     fi
     _PYPI_EXTRA_ARGS=()
     if [ -n "$VERSION" ] && [[ "$VERSION" =~ (dev|a|b|rc) ]]; then

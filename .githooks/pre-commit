@@ -55,10 +55,10 @@ if ((${#STAGED_FILES[@]} > 0)); then
   fi
 fi
 
-echo "[pre-commit] dashboard npm run build"
+echo "[pre-commit] dashboard pnpm run build"
 (
   cd "$ROOT/dashboard"
-  npm run build
+  pnpm run build
 )
 
 echo "[pre-commit] all checks passed"

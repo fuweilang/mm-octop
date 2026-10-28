@@ -6,7 +6,7 @@
 #   make publish      - Build + upload to PyPI
 #
 # Prerequisites:
-#   - Node.js + npm   (frontend)
+#   - Node.js + pnpm  (frontend)
 #   - Python 3.12+    (backend)
 #   - uv              (recommended) or pip
 #   - twine           (publish: pip install twine / make install-tools)
@@ -94,10 +94,10 @@ build: build-frontend build-wheel
 
 .PHONY: build-frontend
 build-frontend:
-	@echo "[build-frontend] Installing npm dependencies..."
-	cd $(DASHBOARD_DIR) && npm ci
+	@echo "[build-frontend] Installing pnpm dependencies..."
+	cd $(DASHBOARD_DIR) && pnpm install --frozen-lockfile
 	@echo "[build-frontend] Building dashboard (output: $(DASHBOARD_DEST))..."
-	cd $(DASHBOARD_DIR) && NODE_ENV=production NODE_OPTIONS="--max-old-space-size=2048" npm run build
+	cd $(DASHBOARD_DIR) && NODE_ENV=production NODE_OPTIONS="--max-old-space-size=2048" pnpm run build
 	@echo "[build-frontend] Done."
 
 .PHONY: build-wheel
@@ -159,13 +159,13 @@ publish-test:
 dev:
 	@echo "[dev] Starting frontend and backend dev servers (Ctrl-C to stop both)..."
 	@trap 'kill 0' SIGINT; \
-	(cd $(DASHBOARD_DIR) && npm run dev) & \
+	(cd $(DASHBOARD_DIR) && pnpm run dev) & \
 	($(RUN) octop run) & \
 	wait
 
 .PHONY: dev-frontend
 dev-frontend:
-	cd $(DASHBOARD_DIR) && npm run dev
+	cd $(DASHBOARD_DIR) && pnpm run dev
 
 .PHONY: dev-backend
 dev-backend:
@@ -261,19 +261,19 @@ test-affected:
 .PHONY: lint-frontend
 lint-frontend:
 	@echo "[lint-frontend] ESLint..."
-	cd $(DASHBOARD_DIR) && npm run lint
+	cd $(DASHBOARD_DIR) && pnpm run lint
 	@echo "[lint-frontend] Prettier check..."
-	cd $(DASHBOARD_DIR) && npm run format:check
+	cd $(DASHBOARD_DIR) && pnpm run format:check
 
 .PHONY: format-frontend
 format-frontend:
 	@echo "[format-frontend] Prettier..."
-	cd $(DASHBOARD_DIR) && npm run format
+	cd $(DASHBOARD_DIR) && pnpm run format
 
 .PHONY: typecheck-frontend
 typecheck-frontend:
 	@echo "[typecheck-frontend] tsc..."
-	cd $(DASHBOARD_DIR) && npx tsc -b
+	cd $(DASHBOARD_DIR) && pnpm exec tsc -b
 
 # ─── Quality (full stack) ────────────────────────────────────────────────────
 

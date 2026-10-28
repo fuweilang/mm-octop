@@ -10,8 +10,8 @@ DASHBOARD_DIR="$REPO_ROOT/dashboard"
 DASHBOARD_DEST="$REPO_ROOT/src/octop/dashboard"
 
 echo "[wheel_build] Building dashboard frontend..."
-(cd "$DASHBOARD_DIR" && npm ci)
-(cd "$DASHBOARD_DIR" && npm run build)
+(cd "$DASHBOARD_DIR" && pnpm install --frozen-lockfile)
+(cd "$DASHBOARD_DIR" && pnpm run build)
 
 if [ ! -f "$DASHBOARD_DEST/index.html" ]; then
     echo "[wheel_build] ERROR: dashboard build did not produce src/octop/dashboard/index.html" >&2

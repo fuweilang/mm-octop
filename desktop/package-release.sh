@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=desktop/portable/_common.sh
 source "${REPO_ROOT}/desktop/portable/_common.sh"
 
-if ! command -v npm >/dev/null 2>&1 && [[ -s "${HOME}/.nvm/nvm.sh" ]]; then
+if ! command -v pnpm >/dev/null 2>&1 && [[ -s "${HOME}/.nvm/nvm.sh" ]]; then
   # shellcheck disable=SC1091
   source "${HOME}/.nvm/nvm.sh"
   nvm use 24 >/dev/null
