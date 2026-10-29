@@ -20,6 +20,18 @@ describe("classifyChatStreamError", () => {
     expect(isChatStreamError(msg)).toBe(true);
   });
 
+  it("classifies httpcore stream drops as connection_interrupted", () => {
+    expect(classifyChatStreamError("ReadError:")).toBe(
+      "stream_errors.connection_interrupted",
+    );
+    expect(
+      classifyChatStreamError("RemoteProtocolError: peer closed connection"),
+    ).toBe("stream_errors.connection_interrupted");
+    expect(formatChatStreamError("ReadError:", t)).toBe(
+      "translated:stream_errors.connection_interrupted",
+    );
+  });
+
   it("classifies rate limit and auth errors", () => {
     expect(
       classifyChatStreamError("Error code: 429 - rate_limit_exceeded"),

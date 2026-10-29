@@ -10,6 +10,7 @@ const _STREAM_ERROR_KEYS = [
   "stream_errors.context_length",
   "stream_errors.recursion_limit",
   "stream_errors.timeout_network",
+  "stream_errors.connection_interrupted",
   "stream_errors.provider_unavailable",
   "stream_errors.invalid_request",
   "stream_errors.model_call_failed",
@@ -212,6 +213,20 @@ export function classifyChatStreamError(
     compact.includes("apiconnectionerror")
   ) {
     return "stream_errors.timeout_network";
+  }
+
+  if (
+    compact.includes("readerror") ||
+    compact.includes("remoteprotocolerror") ||
+    compact.includes("writeerror") ||
+    compact.includes("incompleteread") ||
+    lower.includes("peer closed connection") ||
+    lower.includes("connection reset") ||
+    lower.includes("connection aborted") ||
+    lower.includes("server disconnected") ||
+    lower.includes("broken pipe")
+  ) {
+    return "stream_errors.connection_interrupted";
   }
 
   if (

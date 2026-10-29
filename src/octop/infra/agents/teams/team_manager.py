@@ -33,7 +33,7 @@ from octop_harness.teams.util import (
 )
 
 from octop.i18n import tr
-from octop.i18n.domains.stream import format_stream_error
+from octop.i18n.domains.stream import format_stream_error, is_transient_stream_error
 from octop.infra.agents.teams.service import _user_may_use_member, is_team_agent
 from octop.infra.agents.threads.artifact import artifact_path_allowed, extract_artifact_paths
 from octop.infra.db.repos.agents import AgentRow
@@ -2021,18 +2021,31 @@ def _patch_inbox_wrapup(
                 "octop_decision_task": str(getattr(msg, "message", "") or ""),
             },
         )
-        try:
-            reply = await stream_followup(
-                req,
-                room_thread_id=room,
-                speaker_id=host_id,
-            )
-        except Exception:
-            logger.exception("team host wrap-up stream failed host=%s room=%s", host_id, room)
-            return await _fallback(msg, result_text, error_text)
-        if isinstance(reply, dict):
-            return extract_call_response(reply)
-        return ""
+        # 大任务里上游常把长连接掐断（httpcore.ReadError）。这种错误重试一次基本必过，
+        # 之前一次断流就把整个主持人总结钉成失败气泡。这里只对可重试的断言重跑一次，
+        # 非网络类的失败仍然立刻回落到普通调用。
+        for attempt in range(2):
+            try:
+                reply = await stream_followup(
+                    req,
+                    room_thread_id=room,
+                    speaker_id=host_id,
+                )
+            except Exception as exc:
+                if attempt == 0 and is_transient_stream_error(exc):
+                    logger.warning(
+                        "team host wrap-up interrupted, retrying host=%s room=%s error=%s",
+                        host_id,
+                        room,
+                        exc,
+                    )
+                    continue
+                logger.exception("team host wrap-up stream failed host=%s room=%s", host_id, room)
+                return await _fallback(msg, result_text, error_text)
+            if isinstance(reply, dict):
+                return extract_call_response(reply)
+            return ""
+        return await _fallback(msg, result_text, error_text)
 
     inbox._synthesize_reply = synthesize
 
@@ -2273,7 +2286,16 @@ def wire_host_dispatch(
                     room_thread_id=room,
                     speaker_id=agent_id,
                 )
-            return await original_call_agent(agent_id, request)
+            try:
+                return await original_call_agent(agent_id, request)
+            except Exception as exc:
+                # 成员任务同样容易被长连接断流打断，重试一次再放弃。
+                if not is_transient_stream_error(exc):
+                    raise
+                logger.warning(
+                    "team peer call interrupted, retrying agent=%s error=%s", agent_id, exc
+                )
+                return await original_call_agent(agent_id, request)
 
         harness_team._call_agent = call_agent
         inbox = getattr(harness_team, "inbox", None)

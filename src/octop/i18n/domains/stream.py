@@ -22,6 +22,7 @@ INSUFFICIENT_BALANCE = f"{_PREFIX}stream_errors.insufficient_balance"
 CONTEXT_LENGTH = f"{_PREFIX}stream_errors.context_length"
 RECURSION_LIMIT = f"{_PREFIX}stream_errors.recursion_limit"
 TIMEOUT_NETWORK = f"{_PREFIX}stream_errors.timeout_network"
+CONNECTION_INTERRUPTED = f"{_PREFIX}stream_errors.connection_interrupted"
 PROVIDER_UNAVAILABLE = f"{_PREFIX}stream_errors.provider_unavailable"
 MODEL_CALL_FAILED = f"{_PREFIX}stream_errors.model_call_failed"
 PATH_OUTSIDE_ROOT = f"{_PREFIX}stream_errors.path_outside_root"
@@ -29,6 +30,7 @@ INVALID_REQUEST = f"{_PREFIX}stream_errors.invalid_request"
 
 __all__ = [
     "AUTH",
+    "CONNECTION_INTERRUPTED",
     "CONTEXT_LENGTH",
     "INSUFFICIENT_BALANCE",
     "INVALID_REQUEST",
@@ -43,6 +45,7 @@ __all__ = [
     "classify_stream_error_message",
     "exception_display_message",
     "format_stream_error",
+    "is_transient_stream_error",
     "model_retry_failure_prompt",
     "stream_error_message",
     "unwrap_model_retry_message",
@@ -198,11 +201,69 @@ def classify_stream_error_message(message: str) -> str | None:
     ):
         return TIMEOUT_NETWORK
 
+    # httpcore/httpx raise these as bare exception types (empty message), e.g.
+    # ``ReadError: `` when a provider cuts an SSE stream mid-response. Retrying
+    # once almost always succeeds, so give users an actionable sentence.
+    if (
+        "readerror" in compact
+        or "remoteprotocolerror" in compact
+        or "writeerror" in compact
+        or "incompleteread" in compact
+        or "peer closed connection" in lower
+        or "connection reset" in lower
+        or "connection aborted" in lower
+        or "server disconnected" in lower
+        or "broken pipe" in lower
+    ):
+        return CONNECTION_INTERRUPTED
+
     original = _normalize_message(message).lower()
     if "model call failed after" in original or MODEL_RETRY_FAILURE_MARK in original:
         return MODEL_CALL_FAILED
 
     return None
+
+
+_TRANSIENT_EXC_NAMES = frozenset(
+    {
+        "ReadError",
+        "WriteError",
+        "RemoteProtocolError",
+        "ConnectError",
+        "ReadTimeout",
+        "ConnectTimeout",
+        "PoolTimeout",
+        "APIConnectionError",
+        "APITimeoutError",
+        "TimeoutError",
+        "TimeoutException",
+        "ConnectionError",
+        "ConnectionResetError",
+        "BrokenPipeError",
+        "IncompleteRead",
+        "ServerDisconnectedError",
+    }
+)
+
+_TRANSIENT_KEYS = frozenset(
+    {CONNECTION_INTERRUPTED, TIMEOUT_NETWORK, PROVIDER_UNAVAILABLE, STREAM_STALL}
+)
+
+
+def is_transient_stream_error(exc: BaseException | str) -> bool:
+    """True when retrying once is likely to succeed (dropped stream / network blip)."""
+    if isinstance(exc, str):
+        return classify_stream_error_message(exc) in _TRANSIENT_KEYS
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if type(current).__name__ in _TRANSIENT_EXC_NAMES:
+            return True
+        if classify_stream_error_message(str(current)) in _TRANSIENT_KEYS:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def exception_display_message(exc: BaseException | str) -> str:
