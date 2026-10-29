@@ -270,3 +270,28 @@ def test_format_stream_error_empty_exception_still_localized() -> None:
     assert text
     assert "模型调用失败" in text
     assert "TimeoutError" in text
+
+
+def test_classify_httpcore_read_error_as_connection_interrupted() -> None:
+    from octop.i18n.domains.stream import CONNECTION_INTERRUPTED
+
+    assert classify_stream_error_message("ReadError: ") == CONNECTION_INTERRUPTED
+    assert format_stream_error("ReadError: ", "zh") == _stream_text(CONNECTION_INTERRUPTED)
+
+
+def _stream_text(key: str) -> str:
+    from octop.i18n.domains.stream import stream_error_message
+
+    return stream_error_message(key, "zh")
+
+
+def test_is_transient_stream_error_detects_read_error_chain() -> None:
+    from octop.i18n.domains.stream import is_transient_stream_error
+
+    class ReadError(Exception):
+        pass
+
+    outer = RuntimeError("model call failed")
+    outer.__cause__ = ReadError()
+    assert is_transient_stream_error(outer) is True
+    assert is_transient_stream_error(ValueError("bad request")) is False
