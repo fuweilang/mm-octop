@@ -7,6 +7,7 @@ package main
 // stub message only.
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -301,24 +302,28 @@ func sha256HexEqual(got, want string) bool {
 // replacePortableFromZip swaps ~/.octop/portable with the contents of an
 // already-downloaded green zip. Same atomic rename dance as replacePortable;
 // Windows and Mac share octopHome()/portable paths.
-func replacePortableFromZip(root, zipPath string) error {
+//
+// The displaced tree is returned instead of deleted: if the new build cannot
+// start, rollbackUpdate() puts it back so a broken download never leaves the
+// client unusable.
+func replacePortableFromZip(root, zipPath string) (string, error) {
 	next := root + ".new"
 	previous := root + ".previous"
 	_ = os.RemoveAll(next)
 	if err := unzipGreen(zipPath, next); err != nil {
 		_ = os.RemoveAll(next)
-		return err
+		return "", err
 	}
 	if !launchReady(next) {
 		_ = os.RemoveAll(next)
-		return fmt.Errorf("portable extract missing launch.py or python under %s", next)
+		return "", fmt.Errorf("portable extract missing launch.py or python under %s", next)
 	}
 	_ = os.RemoveAll(previous)
 	hadCurrent := false
 	if _, err := os.Stat(root); err == nil {
 		if err := os.Rename(root, previous); err != nil {
 			_ = os.RemoveAll(next)
-			return err
+			return "", err
 		}
 		hadCurrent = true
 	}
@@ -327,10 +332,12 @@ func replacePortableFromZip(root, zipPath string) error {
 			_ = os.Rename(previous, root)
 		}
 		_ = os.RemoveAll(next)
-		return err
+		return "", err
 	}
-	_ = os.RemoveAll(previous)
-	return nil
+	if !hadCurrent {
+		return "", nil
+	}
+	return previous, nil
 }
 
 // dashboardDir is where the running runtime serves the SPA from.
@@ -340,28 +347,28 @@ func dashboardDir(root string) string {
 
 // replaceDashboardFromZip swaps only the SPA bundle. The zip carries a single
 // top-level folder (dashboard/…) because unzipGreen strips the first segment.
-func replaceDashboardFromZip(root, zipPath string) error {
+func replaceDashboardFromZip(root, zipPath string) (string, error) {
 	target := dashboardDir(root)
 	next := target + ".new"
 	previous := target + ".previous"
 	if err := unzipGreen(zipPath, next); err != nil {
 		_ = os.RemoveAll(next)
-		return err
+		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(next, "index.html")); err != nil {
 		_ = os.RemoveAll(next)
-		return fmt.Errorf("dashboard bundle missing index.html")
+		return "", fmt.Errorf("dashboard bundle missing index.html")
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		_ = os.RemoveAll(next)
-		return err
+		return "", err
 	}
 	_ = os.RemoveAll(previous)
 	hadCurrent := false
 	if _, err := os.Stat(target); err == nil {
 		if err := os.Rename(target, previous); err != nil {
 			_ = os.RemoveAll(next)
-			return err
+			return "", err
 		}
 		hadCurrent = true
 	}
@@ -370,10 +377,12 @@ func replaceDashboardFromZip(root, zipPath string) error {
 			_ = os.Rename(previous, target)
 		}
 		_ = os.RemoveAll(next)
-		return err
+		return "", err
 	}
-	_ = os.RemoveAll(previous)
-	return nil
+	if !hadCurrent {
+		return "", nil
+	}
+	return previous, nil
 }
 
 // stopRuntimeForUpdate shuts the runtime down and releases its port so files can
@@ -424,17 +433,102 @@ func (a *App) applyDashboardUpdate(locale Locale, previousURL, root string, arti
 
 	host, preferred := a.stopRuntimeForUpdate()
 	a.setStatus(desktopText(locale, copyStatusMammothDashboardInstalling))
-	if err := replaceDashboardFromZip(root, zipPath); err != nil {
+	previous, err := replaceDashboardFromZip(root, zipPath)
+	if err != nil {
 		a.failMammothUpdate(locale, previousURL, err)
+		return
+	}
+
+	a.setStatus(desktopText(locale, copyStatusMammothRestarting))
+	base, err := a.hotRestartOctop(locale, root, host, preferred)
+	if err == nil {
+		err = probeDashboardServes(base)
+	}
+	if err != nil {
+		a.rollbackUpdate(locale, previousURL, root, dashboardDir(root), previous, host, preferred, err)
 		return
 	}
 	_ = writeDashboardStamp(dashboardStamp{Version: artifact.Version, SHA256: artifact.SHA256})
+	_ = os.RemoveAll(previous)
+}
 
-	a.setStatus(desktopText(locale, copyStatusMammothRestarting))
-	if err := a.hotRestartOctop(locale, root, host, preferred); err != nil {
-		a.failMammothUpdate(locale, previousURL, err)
+// restorePreviousDir puts the tree displaced by an update back in place.
+func restorePreviousDir(target, previous string) error {
+	if strings.TrimSpace(previous) == "" {
+		return fmt.Errorf("no previous build to restore")
+	}
+	if _, err := os.Stat(previous); err != nil {
+		return fmt.Errorf("previous build missing: %w", err)
+	}
+	broken := target + ".broken"
+	_ = os.RemoveAll(broken)
+	hadCurrent := false
+	if _, err := os.Stat(target); err == nil {
+		if err := os.Rename(target, broken); err != nil {
+			return err
+		}
+		hadCurrent = true
+	}
+	if err := os.Rename(previous, target); err != nil {
+		if hadCurrent {
+			_ = os.Rename(broken, target)
+		}
+		return err
+	}
+	_ = os.RemoveAll(broken)
+	return nil
+}
+
+// probeDashboardServes is the post-restart gate for an update: /api/health can
+// answer while the SPA bundle is broken (bad build, missing index.html), which
+// would leave the user on a white screen with no way back.
+func probeDashboardServes(base string) error {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(strings.TrimRight(base, "/") + "/")
+	if err != nil {
+		return fmt.Errorf("dashboard probe: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("dashboard probe HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return fmt.Errorf("dashboard probe read: %w", err)
+	}
+	if !bytes.Contains(body, []byte(`id="root"`)) {
+		// Accept any real SPA document so a future mount-point rename does not
+		// trigger a false rollback on a perfectly good build.
+		lower := bytes.ToLower(body)
+		if !bytes.Contains(lower, []byte("<!doctype html")) || !bytes.Contains(lower, []byte("<script")) {
+			return fmt.Errorf("dashboard probe: index.html not served")
+		}
+	}
+	return nil
+}
+
+// rollbackUpdate restores the build displaced by a failed update and brings the
+// runtime back up, so a bad package degrades to "old version still works"
+// instead of "client is broken until someone reinstalls".
+func (a *App) rollbackUpdate(
+	locale Locale,
+	previousURL, root, target, previous, host string,
+	preferred int,
+	cause error,
+) {
+	log.Printf("desktop: update failed (%v); rolling back %s", cause, target)
+	a.setStatus(desktopText(locale, copyStatusMammothRollingBack))
+	a.stopRuntimeForUpdate()
+	if err := restorePreviousDir(target, previous); err != nil {
+		a.failMammothUpdate(locale, previousURL, fmt.Errorf("%w (rollback failed: %v)", cause, err))
 		return
 	}
+	if _, err := a.hotRestartOctop(locale, root, host, preferred); err != nil {
+		a.failMammothUpdate(locale, previousURL, fmt.Errorf("%w (rollback restart failed: %v)", cause, err))
+		return
+	}
+	a.setStatus(desktopText(locale, copyStatusMammothRolledBack))
+	time.Sleep(1600 * time.Millisecond)
 }
 
 func (a *App) beginMammothUpdate() {
@@ -539,7 +633,8 @@ func (a *App) runMammothUpdate() {
 	host, preferred := a.stopRuntimeForUpdate()
 
 	a.setStatus(desktopText(locale, copyStatusMammothInstalling, artifact.Version))
-	if err := replacePortableFromZip(root, zipPath); err != nil {
+	previous, err := replacePortableFromZip(root, zipPath)
+	if err != nil {
 		a.failMammothUpdate(locale, previousURL, err)
 		return
 	}
@@ -551,15 +646,21 @@ func (a *App) runMammothUpdate() {
 		_ = exec.Command("xattr", "-dr", "com.apple.quarantine", root).Run()
 	}
 	if !launchReady(root) {
-		a.failMammothUpdate(locale, previousURL, fmt.Errorf("portable extract missing launch.py or python under %s", root))
+		a.rollbackUpdate(locale, previousURL, root, root, previous, host, preferred,
+			fmt.Errorf("portable extract missing launch.py or python under %s", root))
 		return
 	}
 
 	a.setStatus(desktopText(locale, copyStatusMammothRestarting))
-	if err := a.hotRestartOctop(locale, root, host, preferred); err != nil {
-		a.failMammothUpdate(locale, previousURL, err)
+	base, err := a.hotRestartOctop(locale, root, host, preferred)
+	if err == nil {
+		err = probeDashboardServes(base)
+	}
+	if err != nil {
+		a.rollbackUpdate(locale, previousURL, root, root, previous, host, preferred, err)
 		return
 	}
+	_ = os.RemoveAll(previous)
 	if shellNotice {
 		log.Printf("mammoth update: shell %s available (Phase 2 stub)", entry.Shell.Version)
 		a.setStatus(desktopText(locale, copyStatusMammothShellNewer, entry.Shell.Version))
@@ -567,14 +668,14 @@ func (a *App) runMammothUpdate() {
 	}
 }
 
-func (a *App) hotRestartOctop(locale Locale, root, host string, preferred int) error {
+func (a *App) hotRestartOctop(locale Locale, root, host string, preferred int) (string, error) {
 	configured := preferred
 	preferred = a.preferredPort(host, configured)
 	// allowAlternate=true: an update restart must not be blocked by a port
 	// conflict (the target port itself is still tried first).
 	port, err := chooseStartPort(host, preferred, true)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if port != configured {
 		log.Printf(
@@ -588,12 +689,12 @@ func (a *App) hotRestartOctop(locale Locale, root, host string, preferred int) e
 	a.cmd = cmd
 	a.mu.Unlock()
 	if err != nil {
-		return err
+		return "", err
 	}
 	base := dashboardURL(host, port)
 	a.setStatus(desktopText(locale, copyStatusStartingService))
 	if err := waitHealth(locale, base, 2*time.Minute); err != nil {
-		return err
+		return base, err
 	}
 	if err := writeDesktopPort(port); err != nil {
 		log.Printf("desktop port: %v", err)
@@ -604,7 +705,7 @@ func (a *App) hotRestartOctop(locale Locale, root, host string, preferred int) e
 	}
 	a.rememberListenPort(port, configured)
 	a.showDashboard(base)
-	return nil
+	return base, nil
 }
 
 func (a *App) failMammothUpdate(locale Locale, previousURL string, err error) {
@@ -616,7 +717,7 @@ func (a *App) failMammothUpdate(locale Locale, previousURL string, err error) {
 	// still-on-disk portable back so the user is not stuck on the splash.
 	host, preferred := resolveListen()
 	if findRunningDashboard(host, preferred) == "" && launchReady(portableDir()) {
-		if restartErr := a.hotRestartOctop(locale, portableDir(), host, preferred); restartErr != nil {
+		if _, restartErr := a.hotRestartOctop(locale, portableDir(), host, preferred); restartErr != nil {
 			log.Printf("mammoth update recovery restart: %v", restartErr)
 			a.setStatus(desktopText(locale, copyErrorMammothUpdateFailed, restartErr.Error()))
 			time.Sleep(1600 * time.Millisecond)
