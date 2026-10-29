@@ -39,11 +39,17 @@ async function loadPlatformOrigin(): Promise<string | null> {
     const body = await res.text();
     if (res.ok === false) {
       if (isInitializingPayload(res.status, body)) {
-        throw new PlatformOriginInitializingError(res.status, body.slice(0, 240));
+        throw new PlatformOriginInitializingError(
+          res.status,
+          body.slice(0, 240),
+        );
       }
       return null;
     }
-    const data = JSON.parse(body) as { platform_origin?: string; ready?: boolean };
+    const data = JSON.parse(body) as {
+      platform_origin?: string;
+      ready?: boolean;
+    };
     if (data.ready === false) {
       throw new PlatformOriginInitializingError(res.status, body.slice(0, 240));
     }
@@ -65,7 +71,10 @@ export async function readPlatformOrigin(): Promise<string | null> {
   return loadPlatformOrigin();
 }
 
-export function platformUrl(path: string, origin = platformOriginCache || window.location.origin): string {
+export function platformUrl(
+  path: string,
+  origin = platformOriginCache || window.location.origin,
+): string {
   return new URL(path, origin.endsWith("/") ? origin : `${origin}/`).toString();
 }
 
@@ -79,7 +88,10 @@ export function octopReturnUrl() {
 }
 
 /** Desktop shell is a different origin from the 中台, so it cannot share that Cookie. */
-export function shouldUseLocalLogin(platformOrigin: string, pageOrigin: string): boolean {
+export function shouldUseLocalLogin(
+  platformOrigin: string,
+  pageOrigin: string,
+): boolean {
   return Boolean(platformOrigin) && platformOrigin !== pageOrigin;
 }
 
@@ -88,7 +100,10 @@ export function localLoginUrl(): string {
   return `${window.location.origin}${base}/login`;
 }
 
-export function mammothLoginUrl(next?: string, origin = platformOriginCache || window.location.origin) {
+export function mammothLoginUrl(
+  next?: string,
+  origin = platformOriginCache || window.location.origin,
+) {
   const url = new URL("/login", origin);
   if (next) url.searchParams.set("next", next);
   return url.toString();
@@ -124,30 +139,43 @@ function requireTicketLoginUrl(url: string): string {
 /** Chrome must open as the client user, not whatever Cookie Chrome already has. */
 export async function openEnterpriseConsoleFromClient(): Promise<string> {
   const origin = await ensurePlatformOrigin();
-  const { getAuthToken } = await import("../api/request");
-  const token = getAuthToken();
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const { getAuthToken, refreshSession } = await import("../api/request");
 
-  try {
+  // The handoff needs a live local token. Desktop keeps one for days, so a 401
+  // here usually just means it aged out — renew and retry instead of telling
+  // the user to sign out and back in.
+  const consoleLink = async (retried = false): Promise<string | null> => {
+    const token = getAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch("/api/auth/mammoth/console-link", {
       method: "POST",
       headers,
       credentials: "include",
     });
-    if (res.ok) {
-      const data = (await res.json()) as { url?: string };
-      if (data.url) return requireTicketLoginUrl(data.url);
+    if (res.status === 401 && !retried && (await refreshSession())) {
+      return consoleLink(true);
     }
+    if (!res.ok) return null;
+    const data = (await res.json()) as { url?: string };
+    return data.url ?? null;
+  };
+
+  try {
+    const url = await consoleLink();
+    if (url) return requireTicketLoginUrl(url);
   } catch {
     /* fall through */
   }
 
   try {
-    const res = await fetch(platformUrl("/console/api/auth/browser-sso-ticket", origin), {
-      method: "POST",
-      credentials: "include",
-    });
+    const res = await fetch(
+      platformUrl("/console/api/auth/browser-sso-ticket", origin),
+      {
+        method: "POST",
+        credentials: "include",
+      },
+    );
     if (res.ok) {
       const data = (await res.json()) as { ticket?: string; next?: string };
       if (data.ticket) {

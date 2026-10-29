@@ -8,6 +8,7 @@ vi.mock("../api/modules/auth", () => ({
 
 vi.mock("../api/request", () => ({
   getAuthToken: () => "octop-token",
+  refreshSession: async () => false,
 }));
 
 import { authApi } from "../api/modules/auth";

@@ -139,6 +139,10 @@ class OctopConfig:
     port: int = 8088
     log_level: str = "info"
     access_token_ttl_seconds: int = 86400
+    # How long past ``exp`` a token may still be exchanged at /auth/refresh.
+    # Desktop keeps the SPA open for days; without this an idle client is
+    # logged out 24h after login.
+    token_refresh_grace_seconds: int = 2592000
     login_max_attempts: int = 5
     login_lockout_seconds: int = 900
     cors_origins: list[str] = field(default_factory=list)
@@ -481,6 +485,12 @@ def load_config(path: Path) -> OctopConfig:
         merged["access_token_ttl_seconds"] = _coerce_int(
             "OCTOP_ACCESS_TOKEN_TTL", v, merged["access_token_ttl_seconds"]
         )
+    if v := os.environ.get("OCTOP_TOKEN_REFRESH_GRACE_SECONDS"):
+        merged["token_refresh_grace_seconds"] = _coerce_int(
+            "OCTOP_TOKEN_REFRESH_GRACE_SECONDS",
+            v,
+            merged.get("token_refresh_grace_seconds", 2592000),
+        )
     if v := os.environ.get("OCTOP_LOGIN_MAX_ATTEMPTS"):
         merged["login_max_attempts"] = _coerce_int(
             "OCTOP_LOGIN_MAX_ATTEMPTS", v, merged.get("login_max_attempts", 5)
@@ -613,6 +623,7 @@ def load_config(path: Path) -> OctopConfig:
         port=int(merged["port"]),
         log_level=merged["log_level"],
         access_token_ttl_seconds=int(merged["access_token_ttl_seconds"]),
+        token_refresh_grace_seconds=int(merged.get("token_refresh_grace_seconds", 2592000)),
         login_max_attempts=int(merged.get("login_max_attempts", 5)),
         login_lockout_seconds=int(merged.get("login_lockout_seconds", 900)),
         cors_origins=list(merged.get("cors_origins") or []),

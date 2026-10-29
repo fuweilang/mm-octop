@@ -45,6 +45,9 @@ _JWT_EXEMPT_EXACT = (
     # Boot diagnostics: the shell reports before anyone signs in (rate-limited).
     "/api/client-log",
     "/api/auth/login",
+    # Desktop exchanges a recently expired token here; the middleware would
+    # reject it before the route's grace window could apply.
+    "/api/auth/refresh",
     "/api/auth/captcha",
     "/api/auth/oidc/status",
     "/api/auth/oidc/start",
