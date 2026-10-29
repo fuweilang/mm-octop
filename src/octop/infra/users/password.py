@@ -12,7 +12,7 @@ _HASHER = PasswordHasher()
 MIN_PASSWORD_LENGTH = 6
 
 # Kept for docker-entrypoint parity tests. Product policy no longer denylists.
-_COMMON_PASSWORDS = frozenset()
+_COMMON_PASSWORDS: frozenset[str] = frozenset()
 
 
 def hash_password(plain: str) -> str:

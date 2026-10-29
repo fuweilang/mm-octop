@@ -143,7 +143,7 @@ class SsoService:
             "display_name": provider.display_name if provider is not None else "",
         }
 
-    def providers_status(self) -> dict[str, list[dict[str, bool | str]]]:
+    def providers_status(self) -> dict[str, Any]:
         rows = {row.kind: row for row in self._services.sso_repo.list()}
         users_exist = self._user_manager.count() > 0
         providers: list[dict[str, bool | str]] = []
