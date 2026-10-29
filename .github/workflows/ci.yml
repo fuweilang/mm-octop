@@ -27,6 +27,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # 版本号 SSOT 在 ground/config/version.json，由 ground 的 version:sync 写入
+      # pyproject 与 __init__；这里只断言两处没有偷偷分叉。
+      - name: Version consistency
+        run: |
+          set -euo pipefail
+          PY=$(sed -nE 's/^version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' pyproject.toml | head -1)
+          INIT=$(sed -nE 's/^__version__[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' src/octop/__init__.py | head -1)
+          test "$PY" = "$INIT" || { echo "pyproject ($PY) != __init__ ($INIT)"; exit 1; }
+
       - uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
