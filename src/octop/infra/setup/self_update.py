@@ -182,6 +182,28 @@ def get_local_version() -> str:
         return "0.0.0"
 
 
+def get_product_version() -> str:
+    """Product version baked into the image/package.
+
+    Deliberately ignores ``MAMMOTH_APP_VERSION``: that env var used to be set by
+    hand in the server ``.env`` and drifted from the real release (UI showed
+    v1.1.0 while the image was 1.1.2). Use :func:`get_local_version` for
+    self-update comparisons, this one for display / API.
+    """
+    try:
+        from importlib.metadata import version
+
+        target = green_packages_dir()
+        fpk_target = os.environ.get("OCTOP_FPK_SITE_PACKAGES", "").strip()
+        if target is not None or fpk_target:
+            return get_version_in_dir(sys.executable, str(target or fpk_target)) or "0.0.0"
+        return version(_PACKAGE_NAME)
+    except Exception:
+        from octop import __version__
+
+        return __version__
+
+
 @dataclass
 class PyPIInfo:
     version: str

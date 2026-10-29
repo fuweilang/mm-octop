@@ -236,6 +236,7 @@ def build_app(server: OctopServer) -> FastAPI:
         usage,
         user_roles,
         users,
+        version,
         voice,
         workspace,
     )
@@ -317,6 +318,7 @@ def build_app(server: OctopServer) -> FastAPI:
             _RouterMount(terminal.router, "/api", ["terminal"]),
             _RouterMount(uploads.router, "/api", ["chat"]),
             _RouterMount(update.router, "/api", ["update"]),
+            _RouterMount(version.router, "/api", ["version"]),
             _RouterMount(browser.router, "/api", ["browser"]),
             _RouterMount(desktop.router, "/api", ["desktop"]),
             _RouterMount(ollama_models.router, "/api", ["ollama"]),

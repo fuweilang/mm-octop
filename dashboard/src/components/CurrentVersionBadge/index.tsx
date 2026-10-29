@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { Tooltip } from "antd";
+import { useAppVersion } from "../../hooks/useAppVersion";
 import { useUpdateStatus } from "../../hooks/useUpdateStatus";
 import { useCurrentUser } from "../../hooks/useCurrentUser";
 import { userCan } from "../../utils/permissions";
@@ -17,9 +18,11 @@ export default function CurrentVersionBadge({
   const navigate = useNavigate();
   const user = useCurrentUser();
   const { status } = useUpdateStatus();
+  const appVersion = useAppVersion();
 
-  if (!status?.current_version) return null;
-  const version = status.current_version;
+  // 显示版本一律优先 /api/version（镜像内版本）；update status 仅作兜底。
+  const version = appVersion ?? status?.current_version;
+  if (!version) return null;
 
   const canUpdate = userCan(user, "update");
   const tooltip = canUpdate
