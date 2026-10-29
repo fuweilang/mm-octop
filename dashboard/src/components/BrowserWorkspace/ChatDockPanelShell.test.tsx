@@ -27,7 +27,7 @@ function renderShell(
 }
 
 function expectedDockSpacer(chrome: "mac" | "windows"): string {
-  return `${WINDOW_CONTROLS_INSET[chrome] - DOCK_WINDOW_CONTROLS_PAD_PX}px`;
+  return `${Math.max(0, WINDOW_CONTROLS_INSET[chrome] - DOCK_WINDOW_CONTROLS_PAD_PX)}px`;
 }
 
 function spacerWidth(container: HTMLElement): string | undefined {
@@ -39,8 +39,20 @@ function spacerWidth(container: HTMLElement): string | undefined {
 
 describe("ChatDockPanelShell chrome inset", () => {
   it("inserts a pixel spacer so right-dock and popup toolbars clear window controls", () => {
+    // Windows paints three caption buttons on the trailing edge; macOS keeps
+    // its lights on the leading edge, so the trailing inset is zero and the
+    // spacer is skipped entirely.
     const { container, rerender } = renderShell("right", "mac");
-    expect(spacerWidth(container)).toBe(expectedDockSpacer("mac"));
+    expect(
+      container.querySelector(`[${WINDOW_CONTROLS_SPACER_ATTR}]`),
+    ).toBeNull();
+
+    rerender(
+      <DesktopChromeProvider value="windows">
+        <ChatDockPanelShell {...baseProps} mode="right" />
+      </DesktopChromeProvider>,
+    );
+    expect(spacerWidth(container)).toBe(expectedDockSpacer("windows"));
 
     rerender(
       <DesktopChromeProvider value="windows">
@@ -50,7 +62,7 @@ describe("ChatDockPanelShell chrome inset", () => {
     expect(spacerWidth(container)).toBe(expectedDockSpacer("windows"));
 
     rerender(
-      <DesktopChromeProvider value="mac">
+      <DesktopChromeProvider value="windows">
         <ChatDockPanelShell {...baseProps} mode="bottom" />
       </DesktopChromeProvider>,
     );

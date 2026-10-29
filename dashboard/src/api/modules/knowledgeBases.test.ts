@@ -5,7 +5,11 @@ const { request, requestUpload } = vi.hoisted(() => ({
   requestUpload: vi.fn(),
 }));
 
-vi.mock("../request", () => ({ request, requestUpload }));
+vi.mock("../request", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../request")>()),
+  request,
+  requestUpload,
+}));
 
 import { knowledgeBasesApi } from "./knowledgeBases";
 
@@ -47,6 +51,14 @@ describe("knowledgeBasesApi", () => {
         body: JSON.stringify({ model: "BAAI/bge-small-zh-v1.5" }),
       },
     );
+  });
+
+  it("scopes the capability probe to an agent when asked", () => {
+    knowledgeBasesApi.getCapability("ag-1");
+
+    expect(request).toHaveBeenCalledWith("/knowledge-bases/capability", {
+      headers: { "X-Octop-Agent-Id": "ag-1" },
+    });
   });
 
   it("requests the full ONNX catalog when expanding embedding options", () => {

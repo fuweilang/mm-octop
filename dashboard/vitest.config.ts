@@ -22,6 +22,11 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     css: false,
+    // Antd Collapse/Select motion plus per-keystroke userEvent pushes the
+    // heaviest memory-settings specs to ~5s locally; the 5s default flaked
+    // them under parallel load. Keep a real hang guard, but leave headroom.
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     pool: "threads",
     coverage: {

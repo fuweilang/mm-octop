@@ -33,23 +33,27 @@ vi.mock("react-i18next", async (importOriginal) => {
     );
   };
 
+  // Real i18next hands out a stable ``t``; components put it in effect deps
+  // (e.g. AuthGuard re-runs its boot gate on ``[retryKey, t]``). Returning a
+  // fresh closure per render would make those effects loop in tests.
+  const t = (
+    key: string,
+    fallback?: string | TOptions,
+    options?: TOptions,
+  ): string => {
+    if (typeof fallback === "string") return interpolate(fallback, options);
+    if (fallback && typeof fallback === "object") {
+      const template = fallback.defaultValue ?? key;
+      return interpolate(template, fallback);
+    }
+    return key;
+  };
+  const i18n = { language: "zh", changeLanguage: () => Promise.resolve() };
+  const translation = { t, i18n };
+
   return {
     ...actual,
-    useTranslation: () => ({
-      t: (
-        key: string,
-        fallback?: string | TOptions,
-        options?: TOptions,
-      ): string => {
-        if (typeof fallback === "string") return interpolate(fallback, options);
-        if (fallback && typeof fallback === "object") {
-          const template = fallback.defaultValue ?? key;
-          return interpolate(template, fallback);
-        }
-        return key;
-      },
-      i18n: { language: "zh", changeLanguage: () => Promise.resolve() },
-    }),
+    useTranslation: () => translation,
     Trans: ({ children }: { children?: React.ReactNode }) => children,
   };
 });
@@ -74,6 +78,63 @@ if (typeof window !== "undefined") {
         dispatchEvent: vi.fn(),
       })),
     });
+  }
+
+  // pdfjs-dist reads ``DOMMatrix`` / ``Path2D`` while its module initialises,
+  // and jsdom ships neither. No test rasterises a real PDF (viewer tests mock
+  // react-pdf), so an identity-matrix stub is enough to let the import pass.
+  if (typeof (globalThis as { DOMMatrix?: unknown }).DOMMatrix === "undefined") {
+    class _DOMMatrix {
+      a = 1;
+      b = 0;
+      c = 0;
+      d = 1;
+      e = 0;
+      f = 0;
+      constructor(init?: number[] | string) {
+        if (Array.isArray(init) && init.length >= 6) {
+          [this.a, this.b, this.c, this.d, this.e, this.f] = init;
+        }
+      }
+      multiplySelf() {
+        return this;
+      }
+      preMultiplySelf() {
+        return this;
+      }
+      translateSelf() {
+        return this;
+      }
+      translate() {
+        return this;
+      }
+      scaleSelf() {
+        return this;
+      }
+      scale() {
+        return this;
+      }
+      rotateSelf() {
+        return this;
+      }
+      invertSelf() {
+        return this;
+      }
+    }
+    (globalThis as unknown as { DOMMatrix: unknown }).DOMMatrix = _DOMMatrix;
+  }
+
+  if (typeof (globalThis as { Path2D?: unknown }).Path2D === "undefined") {
+    class _Path2D {
+      addPath() {}
+      moveTo() {}
+      lineTo() {}
+      bezierCurveTo() {}
+      quadraticCurveTo() {}
+      closePath() {}
+      rect() {}
+    }
+    (globalThis as unknown as { Path2D: unknown }).Path2D = _Path2D;
   }
 
   // ResizeObserver
