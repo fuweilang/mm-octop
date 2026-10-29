@@ -6,12 +6,13 @@ import asyncio
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Header, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from octop.api.common.client_ip import resolve_client_ip
-from octop.api.deps import current_user, get_server, sign_token
+from octop.api.deps import current_user, extract_raw_token, get_server, sign_token
 from octop.infra.auth.captcha import current_env, ensure_captcha, load_effective, public_config
+from octop.infra.auth.tokens import InvalidToken, decode_expired_token_within_grace
 from octop.infra.errors import ErrorCode, OctopError
 from octop.infra.users.email import normalize_email
 from octop.infra.users.permissions import effective_permissions
@@ -197,6 +198,42 @@ async def login(
     if user is None:
         raise OctopError(ErrorCode.AUTH_FAILED, "invalid credentials")
     secret = server.services.secret_repo.get("jwt")
+    ttl = server.services.config.access_token_ttl_seconds
+    token = sign_token(secret, sub=user.id, uname=user.username, role=user.role, ttl_seconds=ttl)
+    return {
+        "access_token": token,
+        "token_type": "Bearer",
+        "expires_in": ttl,
+        "user": _user_json(user, locale=user.locale),
+    }
+
+
+@router.post("/refresh", summary="Renew a recently expired access token")
+async def refresh_access_token(
+    authorization: str | None = Header(None),
+    server: Any = Depends(get_server),
+) -> dict[str, Any]:
+    """Exchange a recently expired token for a fresh one.
+
+    Desktop clients keep one token for days. Without this exchange a client idle
+    past the TTL is silently logged out, and every privileged action — the 中台
+    handoff included — starts returning 401 while the UI still looks signed in.
+    Only tokens that expired within ``token_refresh_grace_seconds`` are accepted.
+    """
+    raw = extract_raw_token(authorization=authorization)
+    if not raw:
+        raise OctopError(ErrorCode.AUTH_FAILED, "missing credentials")
+    secret = server.services.secret_repo.get("jwt")
+    if secret is None:
+        raise OctopError(ErrorCode.INTERNAL_ERROR, "jwt secret missing")
+    grace = int(server.services.config.token_refresh_grace_seconds)
+    try:
+        payload = decode_expired_token_within_grace(secret, raw, grace)
+    except InvalidToken as exc:
+        raise OctopError(ErrorCode.TOKEN_EXPIRED, "token expired") from exc
+    user = server.user_manager.get_by_id(int(payload["sub"]))
+    if user is None:
+        raise OctopError(ErrorCode.USER_DISABLED, "user not active")
     ttl = server.services.config.access_token_ttl_seconds
     token = sign_token(secret, sub=user.id, uname=user.username, role=user.role, ttl_seconds=ttl)
     return {

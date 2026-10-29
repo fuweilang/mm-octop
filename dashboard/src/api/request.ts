@@ -160,7 +160,11 @@ function isDesktopAuthPath(path: string): boolean {
 }
 
 function assertNotSetupLocked(path: string): void {
-  if (_setupRequiredKnown && !isSetupApiPath(path) && !isDesktopAuthPath(path)) {
+  if (
+    _setupRequiredKnown &&
+    !isSetupApiPath(path) &&
+    !isDesktopAuthPath(path)
+  ) {
     handleSetupRequired();
     throw new SetupRequiredError();
   }
@@ -195,7 +199,9 @@ async function check503ForSetupRequired(
     markSetupRequired();
     clearAuthToken();
     if (!isSetupApiPath(path)) {
-      handleSetupRequired(typeof platformOrigin === "string" ? platformOrigin : "");
+      handleSetupRequired(
+        typeof platformOrigin === "string" ? platformOrigin : "",
+      );
     }
     return true;
   }
@@ -355,6 +361,70 @@ function handleUnauthorized(): void {
   })();
 }
 
+let _refreshInFlight: Promise<boolean> | null = null;
+
+/**
+ * Exchange the current token for a fresh one.
+ *
+ * Desktop keeps a single token for days; the server accepts a recently expired
+ * token at ``/auth/refresh`` so an idle client renews itself instead of bouncing
+ * the user through login (which also breaks the 中台 handoff). Single-flight:
+ * parallel 401s share one refresh call.
+ */
+export function refreshSession(): Promise<boolean> {
+  if (_refreshInFlight) return _refreshInFlight;
+  const token = getAuthToken();
+  if (!token) return Promise.resolve(false);
+  const run = (async () => {
+    try {
+      const res = await fetch(getApiUrl("/auth/refresh"), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return false;
+      const data = (await res.json()) as { access_token?: string };
+      if (!data?.access_token) return false;
+      setAuthToken(data.access_token, !isSessionOnlyAuth());
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  _refreshInFlight = run.finally(() => {
+    _refreshInFlight = null;
+  });
+  return _refreshInFlight;
+}
+
+/** Whether a 401 means "this session expired and a refresh may help". */
+async function needsSessionRefresh(
+  path: string,
+  response: Response,
+): Promise<boolean> {
+  if (response.status !== 401 || path.startsWith("/auth/")) return false;
+  const code = await errorCodeOf(response);
+  return !code || SESSION_UNAUTHORIZED_CODES.has(code);
+}
+
+/**
+ * Fetch with one transparent retry after renewing an expired session token.
+ * ``initFactory`` runs again on the retry so the Authorization header carries
+ * the renewed token.
+ */
+async function sendWithSession(
+  path: string,
+  url: string,
+  initFactory: () => RequestInit,
+): Promise<Response> {
+  const first = await fetch(url, initFactory());
+  if (!(await needsSessionRefresh(path, first))) return first;
+  const body = initFactory().body;
+  // A one-shot stream cannot be replayed; leave it to the caller.
+  if (body instanceof ReadableStream) return first;
+  if (!(await refreshSession())) return first;
+  return fetch(url, initFactory());
+}
+
 /**
  * Handle 401 responses: clear token, redirect to login, and throw.
  * Shared by request(), requestBlob(), and requestUpload().
@@ -413,12 +483,10 @@ export async function request<T = unknown>(
 
   const url = getApiUrl(path);
 
-  const headers = buildHeaders(path, options.headers);
-
-  const response = await fetch(url, {
+  const response = await sendWithSession(path, url, () => ({
     ...options,
-    headers,
-  });
+    headers: buildHeaders(path, options.headers),
+  }));
 
   if (await check503ForSetupRequired(path, response)) {
     throw new SetupRequiredError();
@@ -468,11 +536,13 @@ export async function requestBlob(
   assertNotSetupLocked(path);
 
   const url = getApiUrl(path);
-  const headers = buildAuthHeaders(path);
-  const response = await fetch(url, {
+  const response = await sendWithSession(path, url, () => ({
     ...options,
-    headers: { ...headers, ...(options.headers as Record<string, string>) },
-  });
+    headers: {
+      ...buildAuthHeaders(path),
+      ...(options.headers as Record<string, string>),
+    },
+  }));
 
   if (await check503ForSetupRequired(path, response)) {
     throw new SetupRequiredError();
@@ -521,11 +591,13 @@ export async function probeAuthResource(
   assertNotSetupLocked(path);
 
   const url = getApiUrl(path);
-  const headers = buildAuthHeaders(path);
-  const response = await fetch(url, {
+  const response = await sendWithSession(path, url, () => ({
     ...options,
-    headers: { ...headers, ...(options.headers as Record<string, string>) },
-  });
+    headers: {
+      ...buildAuthHeaders(path),
+      ...(options.headers as Record<string, string>),
+    },
+  }));
 
   if (await check503ForSetupRequired(path, response)) {
     throw new SetupRequiredError();
@@ -561,11 +633,13 @@ export async function requestStream(
   assertNotSetupLocked(path);
 
   const url = getApiUrl(path);
-  const headers = buildAuthHeaders(path);
-  const response = await fetch(url, {
+  const response = await sendWithSession(path, url, () => ({
     ...options,
-    headers: { ...headers, ...(options.headers as Record<string, string>) },
-  });
+    headers: {
+      ...buildAuthHeaders(path),
+      ...(options.headers as Record<string, string>),
+    },
+  }));
 
   if (await check503ForSetupRequired(path, response)) {
     throw new SetupRequiredError();
@@ -608,102 +682,118 @@ export async function requestUpload<T = unknown>(
   assertNotSetupLocked(path);
 
   const url = getApiUrl(path);
-  const headers = buildAuthHeaders(path);
   const method = options.method ?? "POST";
 
-  return new Promise<T>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open(method, url);
+  const send = (retried: boolean): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, url);
 
-    for (const [key, value] of Object.entries(headers)) {
-      xhr.setRequestHeader(key, value);
-    }
-    if (options.headers) {
-      const extraEntries =
-        options.headers instanceof Headers
-          ? Array.from(options.headers.entries())
-          : Array.isArray(options.headers)
-          ? options.headers
-          : Object.entries(options.headers);
-      for (const [k, v] of extraEntries) {
-        xhr.setRequestHeader(k, String(v));
+      // Built per attempt so a renewing retry carries the fresh token.
+      const headers = buildAuthHeaders(path);
+      for (const [key, value] of Object.entries(headers)) {
+        xhr.setRequestHeader(key, value);
       }
-    }
-
-    if (onProgress) {
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && event.total > 0) {
-          onProgress(Math.round((event.loaded / event.total) * 100));
+      if (options.headers) {
+        const extraEntries =
+          options.headers instanceof Headers
+            ? Array.from(options.headers.entries())
+            : Array.isArray(options.headers)
+            ? options.headers
+            : Object.entries(options.headers);
+        for (const [k, v] of extraEntries) {
+          xhr.setRequestHeader(k, String(v));
         }
+      }
+
+      if (onProgress) {
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable && event.total > 0) {
+            onProgress(Math.round((event.loaded / event.total) * 100));
+          }
+        };
+      }
+
+      if (options.signal) {
+        if (options.signal.aborted) {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+          return;
+        }
+        options.signal.addEventListener(
+          "abort",
+          () => {
+            xhr.abort();
+          },
+          { once: true },
+        );
+      }
+
+      xhr.onload = () => {
+        void (async () => {
+          const status = xhr.status;
+          const responseText = xhr.responseText;
+          const responseHeaders = new Headers();
+          const renewed = xhr.getResponseHeader(ACCESS_TOKEN_RESPONSE_HEADER);
+          if (renewed) {
+            responseHeaders.set(ACCESS_TOKEN_RESPONSE_HEADER, renewed);
+          }
+          const response = new Response(responseText, {
+            status,
+            headers: responseHeaders,
+          });
+
+          if (await check503ForSetupRequired(path, response)) {
+            reject(new SetupRequiredError());
+            return;
+          }
+
+          if (!retried && (await needsSessionRefresh(path, response))) {
+            // Renew and replay once; the upload body is a FormData copy.
+            if (await refreshSession()) {
+              try {
+                resolve(await send(true));
+              } catch (err) {
+                reject(err);
+              }
+              return;
+            }
+          }
+
+          try {
+            await throwIfUnauthorized(path, response);
+          } catch (err) {
+            reject(err);
+            return;
+          }
+
+          applyRenewedAccessToken(response);
+
+          if (!response.ok) {
+            // Same shape as request() so parseApiError() can read the error envelope.
+            reject(
+              new Error(
+                `Upload failed: ${status}${
+                  responseText ? ` - ${responseText}` : ""
+                }`,
+              ),
+            );
+            return;
+          }
+
+          try {
+            resolve((await response.json()) as T);
+          } catch {
+            reject(new Error("Upload failed: invalid JSON response"));
+          }
+        })();
       };
-    }
 
-    if (options.signal) {
-      if (options.signal.aborted) {
+      xhr.onerror = () => reject(new Error("Network error"));
+      xhr.onabort = () =>
         reject(new DOMException("The operation was aborted.", "AbortError"));
-        return;
-      }
-      options.signal.addEventListener(
-        "abort",
-        () => {
-          xhr.abort();
-        },
-        { once: true },
-      );
-    }
 
-    xhr.onload = () => {
-      void (async () => {
-        const status = xhr.status;
-        const responseText = xhr.responseText;
-        const responseHeaders = new Headers();
-        const renewed = xhr.getResponseHeader(ACCESS_TOKEN_RESPONSE_HEADER);
-        if (renewed) {
-          responseHeaders.set(ACCESS_TOKEN_RESPONSE_HEADER, renewed);
-        }
-        const response = new Response(responseText, {
-          status,
-          headers: responseHeaders,
-        });
+      xhr.send(body);
+    });
 
-        if (await check503ForSetupRequired(path, response)) {
-          reject(new SetupRequiredError());
-          return;
-        }
-
-        try {
-          await throwIfUnauthorized(path, response);
-        } catch (err) {
-          reject(err);
-          return;
-        }
-
-        applyRenewedAccessToken(response);
-
-        if (!response.ok) {
-          // Same shape as request() so parseApiError() can read the error envelope.
-          reject(
-            new Error(
-              `Upload failed: ${status}${
-                responseText ? ` - ${responseText}` : ""
-              }`,
-            ),
-          );
-          return;
-        }
-
-        try {
-          resolve((await response.json()) as T);
-        } catch {
-          reject(new Error("Upload failed: invalid JSON response"));
-        }
-      })();
-    };
-
-    xhr.onerror = () => reject(new Error("Network error"));
-    xhr.onabort = () =>
-      reject(new DOMException("The operation was aborted.", "AbortError"));
-
-    xhr.send(body);
-  });
+  return send(false);
 }
