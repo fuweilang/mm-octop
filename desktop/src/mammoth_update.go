@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,8 +34,11 @@ const (
 var desktopShellVersion = "0.0.0"
 
 type mammothLatestFile struct {
-	SchemaVersion int                              `json:"schema_version"`
-	Platforms     map[string]mammothPlatformLatest `json:"platforms"`
+	SchemaVersion int `json:"schema_version"`
+	// Dashboard is platform independent: the SPA bundle is the same bytes on
+	// macOS and Windows, so it ships once at the top level.
+	Dashboard *mammothArtifact                 `json:"dashboard"`
+	Platforms map[string]mammothPlatformLatest `json:"platforms"`
 }
 
 type mammothPlatformLatest struct {
@@ -118,40 +122,173 @@ func shellNeedsMammothNotice(remote *mammothArtifact) bool {
 	return compareVersions(remote.Version, desktopShellVersion) > 0
 }
 
-func downloadFileSHA256(client *http.Client, fileURL, dest string) (string, error) {
+// dashboardStamp records which SPA bundle this install already applied, so a
+// repeat click on "更新版本" does not download the same zip again.
+type dashboardStamp struct {
+	Version string `json:"version"`
+	SHA256  string `json:"sha256"`
+}
+
+func dashboardStampPath() string {
+	return filepath.Join(octopHome(), "cache", "mammoth-update", "dashboard.json")
+}
+
+func readDashboardStamp() dashboardStamp {
+	var stamp dashboardStamp
+	data, err := os.ReadFile(dashboardStampPath())
+	if err != nil {
+		return stamp
+	}
+	_ = json.Unmarshal(data, &stamp)
+	return stamp
+}
+
+func writeDashboardStamp(stamp dashboardStamp) error {
+	path := dashboardStampPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(stamp)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// dashboardNeedsMammothUpdate decides whether the small SPA-only update applies.
+// The runtime version is the floor: a dashboard bundle that is not newer than
+// the installed runtime is already on disk (bundled inside it).
+func dashboardNeedsMammothUpdate(remote *mammothArtifact, stamp dashboardStamp, runtimeVersion string) bool {
+	if remote == nil {
+		return false
+	}
+	if strings.TrimSpace(remote.Version) == "" || strings.TrimSpace(remote.URL) == "" {
+		return false
+	}
+	if strings.TrimSpace(remote.SHA256) == "" {
+		return false
+	}
+	if stamp.Version == remote.Version && sha256HexEqual(stamp.SHA256, remote.SHA256) {
+		return false
+	}
+	floor := strings.TrimSpace(runtimeVersion)
+	if floor == "" {
+		return false
+	}
+	return compareVersions(remote.Version, floor) > 0
+}
+
+// downloadFileSHA256 fetches fileURL into dest, resuming from a previous
+// “.partial“ when the server honours “Range“. onProgress (optional) is
+// called at most a few times per second so the UI can show a percentage
+// instead of an apparently frozen "downloading" line.
+func downloadFileSHA256(
+	client *http.Client,
+	fileURL, dest string,
+	onProgress func(done, total int64),
+) (string, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Minute}
-	}
-	resp, err := client.Get(fileURL)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("download HTTP %d", resp.StatusCode)
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", err
 	}
 	tmp := dest + ".partial"
-	_ = os.Remove(tmp)
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	var start int64
+	if info, err := os.Stat(tmp); err == nil && info.Size() > 0 {
+		start = info.Size()
+	}
+	req, err := http.NewRequest(http.MethodGet, fileURL, nil)
+	if err != nil {
+		return "", err
+	}
+	if start > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", start))
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusPartialContent && start > 0:
+		// keep the bytes already on disk
+	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		// server ignored the range (or we started fresh): rewrite from zero
+		start = 0
+	default:
+		return "", fmt.Errorf("download HTTP %d", resp.StatusCode)
+	}
+
+	flags := os.O_CREATE | os.O_WRONLY
+	if start > 0 {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	out, err := os.OpenFile(tmp, flags, 0o644)
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.New()
-	_, copyErr := io.Copy(io.MultiWriter(out, sum), resp.Body)
-	closeErr := out.Close()
-	if copyErr != nil {
-		_ = os.Remove(tmp)
-		return "", copyErr
+	if start > 0 {
+		existing, readErr := os.Open(tmp)
+		if readErr != nil {
+			_ = out.Close()
+			return "", readErr
+		}
+		_, readErr = io.Copy(sum, existing)
+		_ = existing.Close()
+		if readErr != nil {
+			_ = out.Close()
+			return "", readErr
+		}
 	}
-	if closeErr != nil {
-		_ = os.Remove(tmp)
-		return "", closeErr
+	total := int64(0)
+	if resp.ContentLength > 0 {
+		total = start + resp.ContentLength
+	} else if cr := resp.Header.Get("Content-Range"); cr != "" {
+		// Some servers stream 206 responses without Content-Length; the total is
+		// still available as "bytes start-end/total".
+		if idx := strings.LastIndex(cr, "/"); idx >= 0 {
+			if parsed, err := strconv.ParseInt(strings.TrimSpace(cr[idx+1:]), 10, 64); err == nil {
+				total = parsed
+			}
+		}
+	}
+	writer := io.MultiWriter(out, sum)
+	buf := make([]byte, 256*1024)
+	var done = start
+	lastReport := time.Now()
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := writer.Write(buf[:n]); writeErr != nil {
+				_ = out.Close()
+				return "", writeErr
+			}
+			done += int64(n)
+			if onProgress != nil && total > 0 && time.Since(lastReport) >= 200*time.Millisecond {
+				onProgress(done, total)
+				lastReport = time.Now()
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			_ = out.Close()
+			// Keep .partial so the next attempt resumes instead of restarting.
+			return "", readErr
+		}
+	}
+	if onProgress != nil && total > 0 {
+		onProgress(total, total)
+	}
+	if err := out.Close(); err != nil {
+		return "", err
 	}
 	if err := os.Rename(tmp, dest); err != nil {
-		_ = os.Remove(tmp)
 		return "", err
 	}
 	return hex.EncodeToString(sum.Sum(nil)), nil
@@ -194,6 +331,110 @@ func replacePortableFromZip(root, zipPath string) error {
 	}
 	_ = os.RemoveAll(previous)
 	return nil
+}
+
+// dashboardDir is where the running runtime serves the SPA from.
+func dashboardDir(root string) string {
+	return filepath.Join(root, "packages", "octop", "dashboard")
+}
+
+// replaceDashboardFromZip swaps only the SPA bundle. The zip carries a single
+// top-level folder (dashboard/…) because unzipGreen strips the first segment.
+func replaceDashboardFromZip(root, zipPath string) error {
+	target := dashboardDir(root)
+	next := target + ".new"
+	previous := target + ".previous"
+	if err := unzipGreen(zipPath, next); err != nil {
+		_ = os.RemoveAll(next)
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(next, "index.html")); err != nil {
+		_ = os.RemoveAll(next)
+		return fmt.Errorf("dashboard bundle missing index.html")
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		_ = os.RemoveAll(next)
+		return err
+	}
+	_ = os.RemoveAll(previous)
+	hadCurrent := false
+	if _, err := os.Stat(target); err == nil {
+		if err := os.Rename(target, previous); err != nil {
+			_ = os.RemoveAll(next)
+			return err
+		}
+		hadCurrent = true
+	}
+	if err := os.Rename(next, target); err != nil {
+		if hadCurrent {
+			_ = os.Rename(previous, target)
+		}
+		_ = os.RemoveAll(next)
+		return err
+	}
+	_ = os.RemoveAll(previous)
+	return nil
+}
+
+// stopRuntimeForUpdate shuts the runtime down and releases its port so files can
+// be replaced (Windows locks running binaries) and the restart is clean.
+func (a *App) stopRuntimeForUpdate() (string, int) {
+	a.mu.Lock()
+	cmd := a.cmd
+	a.cmd = nil
+	ownsPort := a.ownsListenPort
+	a.ownsListenPort = false
+	a.mu.Unlock()
+	stopOctop(cmd)
+	host, preferred := resolveListen()
+	if saved, ok := readDesktopPort(); ok {
+		stopListeningOctop(host, saved)
+	}
+	stopListeningOctop(host, preferred)
+	if ownsPort {
+		clearDesktopPort()
+	}
+	return host, preferred
+}
+
+// applyDashboardUpdate updates only the SPA (a few MB) and hot-restarts the
+// runtime; the portable runtime, the database and the login session stay as is.
+func (a *App) applyDashboardUpdate(locale Locale, previousURL, root string, artifact *mammothArtifact) {
+	zipPath := filepath.Join(
+		octopHome(), "cache", "mammoth-update",
+		"dashboard-"+safeVersion(artifact.Version)+".zip",
+	)
+	a.setStatus(desktopText(locale, copyStatusMammothDashboardDownloading, 0))
+	sum, err := downloadFileSHA256(nil, artifact.URL, zipPath, func(done, total int64) {
+		if total <= 0 {
+			return
+		}
+		a.setStatus(desktopText(locale, copyStatusMammothDashboardDownloading, done*100/total))
+	})
+	if err != nil {
+		a.failMammothUpdate(locale, previousURL, err)
+		return
+	}
+	a.setStatus(desktopText(locale, copyStatusMammothVerifying))
+	if !sha256HexEqual(sum, artifact.SHA256) {
+		_ = os.Remove(zipPath)
+		a.failMammothUpdate(locale, previousURL, fmt.Errorf("%s", desktopText(locale, copyErrorMammothSHAMismatch)))
+		return
+	}
+
+	host, preferred := a.stopRuntimeForUpdate()
+	a.setStatus(desktopText(locale, copyStatusMammothDashboardInstalling))
+	if err := replaceDashboardFromZip(root, zipPath); err != nil {
+		a.failMammothUpdate(locale, previousURL, err)
+		return
+	}
+	_ = writeDashboardStamp(dashboardStamp{Version: artifact.Version, SHA256: artifact.SHA256})
+
+	a.setStatus(desktopText(locale, copyStatusMammothRestarting))
+	if err := a.hotRestartOctop(locale, root, host, preferred); err != nil {
+		a.failMammothUpdate(locale, previousURL, err)
+		return
+	}
 }
 
 func (a *App) beginMammothUpdate() {
@@ -247,6 +488,13 @@ func (a *App) runMammothUpdate() {
 	shellNotice := shellNeedsMammothNotice(entry.Shell)
 
 	if !wantPortable {
+		// The runtime is current; only the SPA may be newer. Downloading the
+		// 8 MB dashboard bundle instead of the 220 MB portable keeps a routine
+		// release to seconds.
+		if dashboardNeedsMammothUpdate(doc.Dashboard, readDashboardStamp(), current) {
+			a.applyDashboardUpdate(locale, previousURL, root, doc.Dashboard)
+			return
+		}
 		msg := desktopText(locale, copyStatusMammothUpToDate, current)
 		if current == "" {
 			msg = desktopText(locale, copyStatusMammothUpToDate, "unknown")
@@ -264,7 +512,12 @@ func (a *App) runMammothUpdate() {
 	a.setStatus(desktopText(locale, copyStatusMammothDownloading, artifact.Version))
 	cacheDir := filepath.Join(octopHome(), "cache", "mammoth-update")
 	zipPath := filepath.Join(cacheDir, fmt.Sprintf("portable-%s-%s.zip", plat, safeVersion(artifact.Version)))
-	sum, err := downloadFileSHA256(nil, artifact.URL, zipPath)
+	sum, err := downloadFileSHA256(nil, artifact.URL, zipPath, func(done, total int64) {
+		if total <= 0 {
+			return
+		}
+		a.setStatus(desktopText(locale, copyStatusMammothDownloadingPercent, artifact.Version, done*100/total))
+	})
 	if err != nil {
 		a.failMammothUpdate(locale, previousURL, err)
 		return
@@ -283,21 +536,7 @@ func (a *App) runMammothUpdate() {
 	}
 
 	// Stop Octop before replacing files so Windows (and Mac) release runtime locks.
-	a.mu.Lock()
-	cmd := a.cmd
-	a.cmd = nil
-	ownsPort := a.ownsListenPort
-	a.ownsListenPort = false
-	a.mu.Unlock()
-	stopOctop(cmd)
-	host, preferred := resolveListen()
-	if saved, ok := readDesktopPort(); ok {
-		stopListeningOctop(host, saved)
-	}
-	stopListeningOctop(host, preferred)
-	if ownsPort {
-		clearDesktopPort()
-	}
+	host, preferred := a.stopRuntimeForUpdate()
 
 	a.setStatus(desktopText(locale, copyStatusMammothInstalling, artifact.Version))
 	if err := replacePortableFromZip(root, zipPath); err != nil {
