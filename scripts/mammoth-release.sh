@@ -153,8 +153,8 @@ for f in "$artifacts"/*.dmg "$artifacts"/*win*.exe; do
   [ -f "$f" ] || continue
   name="$(basename "$f")"
   case "$name" in
-    *darwin-arm64*) plat="darwin-arm64" ;;
-    *darwin-amd64*) plat="darwin-amd64" ;;
+    *darwin-arm64*|*mac-arm64*) plat="darwin-arm64" ;;
+    *darwin-amd64*|*mac-x64*) plat="darwin-amd64" ;;
     *windows*|*win*) plat="windows-amd64" ;;
     *) echo "    skip $name (cannot read platform)"; continue ;;
   esac
