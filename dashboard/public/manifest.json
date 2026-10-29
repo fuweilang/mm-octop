@@ -2,7 +2,7 @@
   "id": "/",
   "name": "猛犸AI",
   "short_name": "猛犸AI",
-  "description": "Smarter self-hosted AI assistant — multi-user, multi-agent",
+  "description": "多用户、多智能体的自托管 AI 助手平台",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
