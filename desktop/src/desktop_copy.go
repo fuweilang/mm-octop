@@ -30,6 +30,8 @@ const (
 	copyStatusMammothDownloadingPercent   = "status.mammoth_downloading_percent"
 	copyStatusMammothDashboardDownloading = "status.mammoth_dashboard_downloading"
 	copyStatusMammothDashboardInstalling  = "status.mammoth_dashboard_installing"
+	copyStatusMammothRollingBack          = "status.mammoth_rolling_back"
+	copyStatusMammothRolledBack           = "status.mammoth_rolled_back"
 	copyErrorMammothUpdateFailed          = "error.mammoth_update_failed"
 	copyErrorMammothSHAMismatch           = "error.mammoth_sha_mismatch"
 	copyErrorBackupFailed                 = "error.backup_failed"

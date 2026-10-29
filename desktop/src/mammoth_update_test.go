@@ -115,7 +115,7 @@ func TestDownloadFileSHA256AndReplacePortableFromZip(t *testing.T) {
 	}
 
 	root := portableDir()
-	if err := replacePortableFromZip(root, dest); err != nil {
+	if _, err := replacePortableFromZip(root, dest); err != nil {
 		t.Fatal(err)
 	}
 	if !launchReady(root) {
@@ -246,7 +246,7 @@ func TestReplaceDashboardFromZip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := replaceDashboardFromZip(root, zipPath); err != nil {
+	if _, err := replaceDashboardFromZip(root, zipPath); err != nil {
 		t.Fatal(err)
 	}
 	body, err := os.ReadFile(filepath.Join(oldDir, "index.html"))
@@ -259,8 +259,8 @@ func TestReplaceDashboardFromZip(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(oldDir, "assets", "app.js")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(oldDir + ".previous"); !os.IsNotExist(err) {
-		t.Fatal("previous dashboard dir should be cleaned up")
+	if _, err := os.Stat(oldDir + ".previous"); err != nil {
+		t.Fatalf("displaced dashboard should be kept for rollback: %v", err)
 	}
 }
 
@@ -289,7 +289,128 @@ func TestReplaceDashboardFromZipRejectsMissingIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := replaceDashboardFromZip(root, zipPath); err == nil {
+	if _, err := replaceDashboardFromZip(root, zipPath); err == nil {
 		t.Fatal("expected missing index.html to fail")
+	}
+}
+
+func TestReplaceDashboardFromZipKeepsPreviousForRollback(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OCTOP_HOME", home)
+
+	root := portableDir()
+	target := dashboardDir(root)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "index.html"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	zipPath := filepath.Join(t.TempDir(), "dashboard.zip")
+	f, err := os.Create(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := zip.NewWriter(f)
+	fw, err := w.Create("dashboard/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fw.Write([]byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	previous, err := replaceDashboardFromZip(root, zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if previous == "" {
+		t.Fatal("expected the displaced dashboard to be kept")
+	}
+	if body, err := os.ReadFile(filepath.Join(previous, "index.html")); err != nil || string(body) != "old" {
+		t.Fatalf("previous dashboard = %q, err %v", body, err)
+	}
+
+	if err := restorePreviousDir(target, previous); err != nil {
+		t.Fatal(err)
+	}
+	if body, err := os.ReadFile(filepath.Join(target, "index.html")); err != nil || string(body) != "old" {
+		t.Fatalf("restored dashboard = %q, err %v", body, err)
+	}
+	if _, err := os.Stat(target + ".broken"); !os.IsNotExist(err) {
+		t.Fatal("broken dir should be cleaned up after rollback")
+	}
+}
+
+func TestReplacePortableFromZipKeepsPreviousForRollback(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OCTOP_HOME", home)
+
+	root := portableDir()
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "stale.txt"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	zipPath := filepath.Join(t.TempDir(), "green.zip")
+	writeTestGreenZip(t, zipPath, "3.0.0")
+
+	previous, err := replacePortableFromZip(root, zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if previous == "" {
+		t.Fatal("expected the displaced portable to be kept")
+	}
+	if _, err := os.Stat(filepath.Join(previous, "stale.txt")); err != nil {
+		t.Fatalf("previous portable missing: %v", err)
+	}
+
+	if err := restorePreviousDir(root, previous); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "stale.txt")); err != nil {
+		t.Fatalf("restored portable missing: %v", err)
+	}
+}
+
+func TestRestorePreviousDirWithoutPreviousFails(t *testing.T) {
+	if err := restorePreviousDir(t.TempDir()+"/target", ""); err == nil {
+		t.Fatal("expected an error when there is no previous build")
+	}
+}
+
+func TestProbeDashboardServes(t *testing.T) {
+	withRoot := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body><div id="root"></div></body></html>`))
+	}))
+	t.Cleanup(withRoot.Close)
+	if err := probeDashboardServes(withRoot.URL); err != nil {
+		t.Fatalf("healthy dashboard rejected: %v", err)
+	}
+
+	whiteScreen := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("moved"))
+	}))
+	t.Cleanup(whiteScreen.Close)
+	if err := probeDashboardServes(whiteScreen.URL); err == nil {
+		t.Fatal("expected a bundle without #root to be rejected")
+	}
+
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(failing.Close)
+	if err := probeDashboardServes(failing.URL); err == nil {
+		t.Fatal("expected HTTP 500 to be rejected")
 	}
 }
