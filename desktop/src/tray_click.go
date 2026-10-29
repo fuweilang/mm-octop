@@ -9,3 +9,10 @@ package main
 func trayLeftClickShowsSettings(goos string) bool {
 	return goos == "darwin"
 }
+
+// trayNeedsQuitMenu reports whether the tray must carry an explicit menu with
+// a quit item. Windows has no keyboard/Dock equivalent of ⌘Q, and closing the
+// window used to hide the app, so users had no discoverable way to exit.
+func trayNeedsQuitMenu(goos string) bool {
+	return goos == "windows"
+}

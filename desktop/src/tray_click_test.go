@@ -15,3 +15,14 @@ func TestNonDarwinTrayLeftClickDoesNotShowSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestTrayNeedsQuitMenuOnlyOnWindows(t *testing.T) {
+	if !trayNeedsQuitMenu("windows") {
+		t.Fatal("windows tray has no native quit path and needs an explicit menu item")
+	}
+	for _, goos := range []string{"darwin", "linux"} {
+		if trayNeedsQuitMenu(goos) {
+			t.Fatalf("%s keeps its native quit path", goos)
+		}
+	}
+}

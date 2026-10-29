@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -68,6 +69,43 @@ func terminatePID(pid int) {
 	kill := exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(pid))
 	hideConsole(kill)
 	_ = kill.Run()
+}
+
+// jobHandle is created once and intentionally never closed: Windows terminates
+// every process in a job when its last handle closes, which is exactly the
+// guarantee we want — the shell dies (quit, crash, Task Manager "end task"),
+// the Octop server dies with it. Without this the server survives the shell,
+// keeps holding 8088/8089 and the next launch attaches to the old runtime.
+var jobHandle windows.Handle
+
+func adoptProcess(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	if jobHandle == 0 {
+		handle, err := windows.CreateJobObject(nil, nil)
+		if err != nil {
+			return
+		}
+		limits := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
+		limits.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+		if _, err := windows.SetInformationJobObject(
+			handle,
+			windows.JobObjectExtendedLimitInformation,
+			uintptr(unsafe.Pointer(&limits)),
+			uint32(unsafe.Sizeof(limits)),
+		); err != nil {
+			_ = windows.CloseHandle(handle)
+			return
+		}
+		jobHandle = handle
+	}
+	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
+	if err != nil {
+		return
+	}
+	defer func() { _ = windows.CloseHandle(process) }()
+	_ = windows.AssignProcessToJobObject(jobHandle, process)
 }
 
 // processCommandLine returns the full command line for pid. wmic is fast and

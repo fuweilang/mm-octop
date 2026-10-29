@@ -13,6 +13,10 @@ func configureProcGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
 
+// adoptProcess is Windows-only orphan protection (see process_windows.go). On
+// Unix the process group already carries the signal, so nothing to do.
+func adoptProcess(*exec.Cmd) {}
+
 func killProcessTree(cmd *exec.Cmd) {
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 	_ = cmd.Wait()
