@@ -30,12 +30,19 @@ async def test_update_status_reprobes_after_cache_ttl(
 ) -> None:
     builds = 0
 
+    # ``_present_status`` re-reads the live local version on every cache hit
+    # ("do not freeze the installed version in the PyPI cache"). Pin it so the
+    # cached payload and the refreshed one agree.
+    monkeypatch.setattr(update_router, "get_local_version", lambda: "1.0.0")
+
     def fake_build(**_: object) -> dict[str, object]:
         nonlocal builds
         builds += 1
         payload = {
             "current_version": "1.0.0",
             "latest_version": "1.0.1",
+            "latest_any": "1.0.1",
+            "latest_stable": "1.0.1",
             "has_update": True,
             "is_editable": False,
             "service_mode": None,
