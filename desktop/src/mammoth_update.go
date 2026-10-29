@@ -34,6 +34,22 @@ const (
 // silent shell replace; Phase 1 only compares it for a stub message.
 var desktopShellVersion = "0.0.0"
 
+// updateRuntime is the process side of an in-app update: stop the running
+// Octop, restart it against the new tree. Kept behind a variable so tests can
+// drive download → verify → swap → probe → rollback without spawning a real
+// runtime or touching the user's port.
+type updateRuntimeOps struct {
+	stop    func(a *App) (host string, preferred int)
+	restart func(a *App, locale Locale, root, host string, preferred int) (string, error)
+}
+
+var updateRuntime = updateRuntimeOps{
+	stop: func(a *App) (string, int) { return a.stopRuntimeForUpdate() },
+	restart: func(a *App, locale Locale, root, host string, preferred int) (string, error) {
+		return a.hotRestartOctop(locale, root, host, preferred)
+	},
+}
+
 type mammothLatestFile struct {
 	SchemaVersion int `json:"schema_version"`
 	// Dashboard is platform independent: the SPA bundle is the same bytes on
@@ -472,7 +488,7 @@ func (a *App) applyDashboardUpdate(locale Locale, previousURL, root string, arti
 		return
 	}
 
-	host, preferred := a.stopRuntimeForUpdate()
+	host, preferred := updateRuntime.stop(a)
 	a.setStatus(desktopText(locale, copyStatusMammothDashboardInstalling))
 	previous, err := replaceDashboardFromZip(root, zipPath)
 	if err != nil {
@@ -481,7 +497,7 @@ func (a *App) applyDashboardUpdate(locale Locale, previousURL, root string, arti
 	}
 
 	a.setStatus(desktopText(locale, copyStatusMammothRestarting))
-	base, err := a.hotRestartOctop(locale, root, host, preferred)
+	base, err := updateRuntime.restart(a, locale, root, host, preferred)
 	if err == nil {
 		err = probeDashboardServes(base)
 	}
@@ -559,12 +575,12 @@ func (a *App) rollbackUpdate(
 ) {
 	log.Printf("desktop: update failed (%v); rolling back %s", cause, target)
 	a.setStatus(desktopText(locale, copyStatusMammothRollingBack))
-	a.stopRuntimeForUpdate()
+	updateRuntime.stop(a)
 	if err := restorePreviousDir(target, previous); err != nil {
 		a.failMammothUpdate(locale, previousURL, fmt.Errorf("%w (rollback failed: %v)", cause, err))
 		return
 	}
-	if _, err := a.hotRestartOctop(locale, root, host, preferred); err != nil {
+	if _, err := updateRuntime.restart(a, locale, root, host, preferred); err != nil {
 		a.failMammothUpdate(locale, previousURL, fmt.Errorf("%w (rollback restart failed: %v)", cause, err))
 		return
 	}
@@ -671,7 +687,7 @@ func (a *App) runMammothUpdate() {
 	}
 
 	// Stop Octop before replacing files so Windows (and Mac) release runtime locks.
-	host, preferred := a.stopRuntimeForUpdate()
+	host, preferred := updateRuntime.stop(a)
 
 	a.setStatus(desktopText(locale, copyStatusMammothInstalling, artifact.Version))
 	previous, err := replacePortableFromZip(root, zipPath)
@@ -693,7 +709,7 @@ func (a *App) runMammothUpdate() {
 	}
 
 	a.setStatus(desktopText(locale, copyStatusMammothRestarting))
-	base, err := a.hotRestartOctop(locale, root, host, preferred)
+	base, err := updateRuntime.restart(a, locale, root, host, preferred)
 	if err == nil {
 		err = probeDashboardServes(base)
 	}
@@ -758,7 +774,7 @@ func (a *App) failMammothUpdate(locale Locale, previousURL string, err error) {
 	// still-on-disk portable back so the user is not stuck on the splash.
 	host, preferred := resolveListen()
 	if findRunningDashboard(host, preferred) == "" && launchReady(portableDir()) {
-		if _, restartErr := a.hotRestartOctop(locale, portableDir(), host, preferred); restartErr != nil {
+		if _, restartErr := updateRuntime.restart(a, locale, portableDir(), host, preferred); restartErr != nil {
 			log.Printf("mammoth update recovery restart: %v", restartErr)
 			a.setStatus(desktopText(locale, copyErrorMammothUpdateFailed, restartErr.Error()))
 			time.Sleep(1600 * time.Millisecond)
