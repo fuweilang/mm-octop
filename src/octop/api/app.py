@@ -154,7 +154,11 @@ def build_app(server: OctopServer) -> FastAPI:
 
     # Bridge proxy must sit inside JWT auth so ``request.state.octop_user`` is set
     # (Starlette runs the last-added middleware first).
+    from octop.api.middleware.client_log_guard import install as install_client_log_guard
+
     install_bridge_proxy(app, server)
+    # Before JWT auth: the client-log body must be capped before it is parsed.
+    install_client_log_guard(app)
     install_jwt_auth(app, server)
     install_setup_lockdown(app, server)
     # Outermost among our middleware (added last → runs first): access log.

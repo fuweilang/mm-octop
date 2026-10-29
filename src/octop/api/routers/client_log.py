@@ -19,14 +19,17 @@ import json
 import logging
 import re
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, cast
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from starlette.concurrency import run_in_threadpool
 
 from octop.api.common.client_ip import resolve_client_ip
+from octop.api.deps import require_admin
 from octop.infra.utils.paths import PathLayout
 
 router = APIRouter()
@@ -34,21 +37,32 @@ logger = logging.getLogger("octop.access")
 
 LOG_NAME = "client-boot.jsonl"
 LOG_ROTATED = "client-boot.1.jsonl"
+_MAX_LOG_BYTES = 1024 * 1024
 _MAX_ERROR = 400
 _MAX_VERSION = 64
 _MAX_PLATFORM = 32
 _MAX_PHASE = 32
 _MAX_PROBES = 12
-_RATE_LIMIT = 12
+_MAX_PROBE_TEXT = 200
+# The shell uploads up to 40 queued lines on the first healthy boot; 12/min made
+# every normal client lose the tail of its own diagnostics to 429s.
+_RATE_LIMIT = 60
 _RATE_WINDOW = 60.0
-_hits: dict[str, tuple[float, int]] = {}
+_MAX_RATE_KEYS = 4096
+_hits: OrderedDict[str, tuple[float, int]] = OrderedDict()
 
+# Catch ``access_token: …`` / ``"refresh_token":"…"`` — the old ``\btoken\b``
+# pattern missed keys that merely *contain* the word, which is how a JWT reached
+# the log through a probe ``status`` dict.
 _SECRET_RE = re.compile(
-    r"(?i)\b(authorization|token|cookie|password|secret)"
-    r"(\s*[:=]\s*)(\S+)"
+    r"(?i)[\w.-]*(?:token|secret|password|passwd|cookie|authorization|api[_-]?key|credential)"
+    r"[\w.-]*(\s*[\"']?\s*[:=]\s*[\"']?)([^\s\"',;}]+)"
 )
 # "Bearer abc.def" has no colon after the scheme; drop the credential itself.
 _BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
+# /Users/<name>, /home/<name>, C:\Users\<name> — never keep the account name.
+_HOME_RE = re.compile(r"(?i)(/users/|/home/|[a-z]:[\\/]+users[\\/]+)([^\\/\s]+)")
+_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$")
 
 
 class ClientLogBody(BaseModel):
@@ -56,14 +70,39 @@ class ClientLogBody(BaseModel):
     runtime_version: str = Field("", max_length=_MAX_VERSION)
     platform: str = Field("", max_length=_MAX_PLATFORM)
     phase: str = Field("", max_length=_MAX_PHASE)
-    last_error: str = Field("", max_length=2000)
+    last_error: str = Field("", max_length=_MAX_ERROR)
     probes: dict[str, Any] | list[Any] | None = None
     ts: str | None = Field(None, max_length=64)
+
+    @field_validator("probes", mode="before")
+    @classmethod
+    def _cap_probes(cls, value: Any) -> dict[str, Any] | None:
+        """Only keep the first few ``{status, error}`` pairs — never the raw blob."""
+        if isinstance(value, dict):
+            items: list[tuple[Any, Any]] = list(value.items())
+        elif isinstance(value, list):
+            items = list(enumerate(value))
+        else:
+            return None
+        capped: dict[str, Any] = {}
+        for name, entry in items[:_MAX_PROBES]:
+            if not isinstance(entry, dict):
+                continue
+            status = entry.get("status")
+            if status is not None and not isinstance(status, str | int | float | bool):
+                # A dict/list status is a body by another name — never persist it.
+                status = "[object]"
+            capped[str(name)[:32]] = {
+                "status": status,
+                "error": entry.get("error"),
+            }
+        return capped
 
 
 def _clip(text: str, limit: int) -> str:
     cleaned = _BEARER_RE.sub("Bearer [redacted]", " ".join(str(text).split()))
-    cleaned = _SECRET_RE.sub(r"\1\2[redacted]", cleaned)
+    cleaned = _SECRET_RE.sub(r"\1[redacted]", cleaned)
+    cleaned = _HOME_RE.sub(r"\1<user>", cleaned)
     if len(cleaned) > limit:
         return cleaned[: limit - 1] + "…"
     return cleaned
@@ -80,11 +119,12 @@ def _probe_summary(probes: dict[str, Any] | list[Any] | None) -> str:
     for name, value in items[:_MAX_PROBES]:
         if not isinstance(value, dict):
             continue
-        status = value.get("status")
-        err = _clip(str(value.get("error") or ""), 80)
-        parts.append(f"{_clip(str(name), 32)}={status if status is not None else '-'}")
+        status = _clip(str(value.get("status") or "-"), 16)
+        err = _clip(str(value.get("error") or ""), _MAX_PROBE_TEXT)
+        label = _clip(str(name), 32)
+        parts.append(f"{label}={status}")
         if err:
-            parts.append(f"{_clip(str(name), 32)}_err={err}")
+            parts.append(f"{label}_err={err}")
     return _clip(",".join(parts), 400)
 
 
@@ -118,15 +158,57 @@ def _try_authenticate(request: Request) -> Any:
 
 
 def _rate_limited(ip: str) -> bool:
+    """Per-IP window with LRU eviction.
+
+    Clearing the whole table (the old behaviour) handed an attacker a reset
+    button: rotate enough source IPs and every counter returns to zero.
+    """
     now = time.monotonic()
     start, count = _hits.get(ip, (now, 0))
     if now - start >= _RATE_WINDOW:
         start, count = now, 0
     count += 1
-    if len(_hits) > 2048:
-        _hits.clear()
     _hits[ip] = (start, count)
+    _hits.move_to_end(ip)
+    while len(_hits) > _MAX_RATE_KEYS:
+        _hits.popitem(last=False)
     return count > _RATE_LIMIT
+
+
+def _append_record(path: Path, record: dict[str, Any]) -> None:
+    """Append one line, rotating at 1 MB so the file can never grow unbounded."""
+    if path.exists() and path.stat().st_size >= _MAX_LOG_BYTES:
+        try:
+            path.replace(path.with_name(LOG_ROTATED))
+        except OSError as exc:  # pragma: no cover - read-only/odd filesystems
+            logger.warning("client-boot rotate failed: %s", exc)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _read_logs(logs: Path) -> str:
+    chunks: list[str] = []
+    total = 0
+    for name in (LOG_ROTATED, LOG_NAME):
+        path = logs / name
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # Two rotated files are ~2 MB; never hand out more than that.
+        if total + len(text) > 2 * _MAX_LOG_BYTES:
+            text = text[: max(0, 2 * _MAX_LOG_BYTES - total)]
+        chunks.append(text)
+        total += len(text)
+    return "".join(chunks)
+
+
+def _valid_ts(raw: str | None) -> str:
+    if raw:
+        candidate = raw.strip()
+        if len(candidate) <= 64 and _TS_RE.match(candidate):
+            return candidate
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _logs_dir(request: Request) -> Path:
@@ -157,21 +239,22 @@ async def upload_client_log(body: ClientLogBody, request: Request) -> dict[str, 
     runtime = _clip(body.runtime_version, _MAX_VERSION) or "-"
 
     record = {
-        "ts": body.ts or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "ts": _valid_ts(body.ts),
         "shell_version": shell,
         "runtime_version": runtime,
         "platform": _clip(body.platform, _MAX_PLATFORM),
         "phase": phase,
         "last_error": error,
         "probes": probes,
+        "ip": ip,
+        "user": _user_label(request),
         # Delivered to the local service in this very request.
         "uploaded": True,
     }
     try:
         logs = _logs_dir(request)
         logs.mkdir(parents=True, exist_ok=True)
-        with (logs / LOG_NAME).open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        await run_in_threadpool(_append_record, logs / LOG_NAME, record)
     except OSError as exc:  # disk full / read-only home: logging still matters
         logger.warning("client-boot append failed: %s", exc)
 
@@ -194,17 +277,13 @@ async def upload_client_log(body: ClientLogBody, request: Request) -> dict[str, 
     summary="Download the desktop boot log",
     response_class=PlainTextResponse,
 )
-async def export_client_log(request: Request) -> PlainTextResponse:
-    """Rotated file first, then the live one, as one ``.jsonl`` download."""
+async def export_client_log(
+    request: Request,
+    _admin: Any = Depends(require_admin()),
+) -> PlainTextResponse:
+    """Admin-only: the log holds every client's IP, user and error text."""
     logs = _logs_dir(request)
-    chunks: list[str] = []
-    for name in (LOG_ROTATED, LOG_NAME):
-        path = logs / name
-        try:
-            chunks.append(path.read_text(encoding="utf-8"))
-        except OSError:
-            continue
-    body = "".join(chunks) or ""
+    body = await run_in_threadpool(_read_logs, logs)
     return PlainTextResponse(
         body,
         media_type="application/x-ndjson",

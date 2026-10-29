@@ -104,3 +104,53 @@ async def test_rate_limit_per_ip(client) -> None:
     ]
     assert codes[:-1] == [200] * client_log._RATE_LIMIT
     assert codes[-1] == 429
+
+
+async def test_oversized_body_is_rejected(client) -> None:
+    http, home = client
+    padding = "x" * 70_000
+    res = await http.post("/api/client-log", json={"phase": "boot", "last_error": padding})
+    assert res.status_code == 413
+    assert not (home / "logs" / "client-boot.jsonl").exists()
+
+
+async def test_probe_status_secrets_are_scrubbed(client) -> None:
+    http, home = client
+    await http.post(
+        "/api/client-log",
+        json={
+            "phase": "probe",
+            "probes": {"oauth": {"status": {"access_token": "eyJhbGciOi.payload.sig"}}},
+        },
+    )
+    text = (home / "logs" / "client-boot.jsonl").read_text(encoding="utf-8")
+    assert "eyJhbGciOi" not in text
+    assert "access_token': '" not in text
+
+
+async def test_ts_is_validated_and_home_paths_scrubbed(client) -> None:
+    http, home = client
+    await http.post(
+        "/api/client-log",
+        json={
+            "phase": "boot",
+            "last_error": "cannot read /Users/alice/Library/Logs/x.log",
+            "ts": "not-a-timestamp-with-a-secret",
+        },
+    )
+    record = json.loads((home / "logs" / "client-boot.jsonl").read_text(encoding="utf-8"))
+    assert "alice" not in record["last_error"]
+    assert record["ts"].endswith("Z")
+    assert "not-a-timestamp" not in record["ts"]
+
+
+async def test_log_rotates_at_size_cap(client) -> None:
+    http, home = client
+    log = home / "logs" / "client-boot.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("{" + '"x": "' + "a" * (1024 * 1024) + '"}\n', encoding="utf-8")
+
+    res = await http.post("/api/client-log", json={"phase": "after_rotate"})
+    assert res.status_code == 200
+    assert (home / "logs" / "client-boot.1.jsonl").exists()
+    assert "after_rotate" in log.read_text(encoding="utf-8")
