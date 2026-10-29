@@ -52,6 +52,17 @@ def test_should_not_defer_when_database_env_set(tmp_path: Path, monkeypatch: pyt
     assert should_defer_control_plane_db(cfg, paths) is False
 
 
+def test_should_not_defer_on_desktop_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """桌面端没有本地安装向导，必须自己建库，否则客户端卡在「正在启动本地服务」。"""
+    root = tmp_path / ".octop"
+    root.mkdir()
+    (root / "config.json").write_text(json.dumps({"port": 8088}))
+    monkeypatch.setenv("OCTOP_MAMMOTH_OIDC_ISSUER", "https://www.mmai.vip/console/api/oidc")
+    paths = PathLayout(root)
+    cfg = load_config(paths.config)
+    assert should_defer_control_plane_db(cfg, paths) is False
+
+
 def test_should_not_defer_postgresql(tmp_path: Path):
     root = tmp_path / ".octop"
     root.mkdir()

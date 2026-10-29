@@ -6974,6 +6974,7 @@
     "backHome": "返回首页",
     "startingLocalTitle": "正在启动本地服务…",
     "startingLocalSubtitle": "本机后端仍在初始化（并非网络不可用）。完成后会自动重试，也可手动重试。",
+    "startingLocalTimeout": "本地服务 20 秒内仍未完成初始化。请完全退出客户端（含托盘）后重新打开；若仍卡住，先结束占用 8088 端口的旧版本进程再试。",
     "offlineDiagnostics": "启动诊断（可复制）",
     "copyDiagnostics": "复制",
     "exportDiagnostics": "导出日志文件",

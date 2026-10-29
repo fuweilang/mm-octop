@@ -422,7 +422,7 @@ func TestEnsurePortableKeepsCurrentRuntimeWhenReplacementIsInvalid(t *testing.T)
 	if got := portableVersion(root); got != "0.9.31" {
 		t.Fatalf("portable version = %q, want 0.9.31", got)
 	}
-	if len(statuses) == 0 || statuses[len(statuses)-1] != "更新内置运行环境失败，继续使用已有运行环境…" {
+	if len(statuses) == 0 || !strings.HasPrefix(statuses[len(statuses)-1], "内置运行环境更新失败：当前仍是旧版本 0.9.31") {
 		t.Fatalf("unexpected statuses: %v", statuses)
 	}
 }

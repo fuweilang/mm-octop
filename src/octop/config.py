@@ -19,6 +19,9 @@ DEFAULT_BROWSER_IDLE_TIMEOUT_MINUTES = 30
 
 _VALID_DRIVERS = frozenset({"sqlite", "postgresql"})
 
+# The desktop shell always exports this; server / Docker installs do not.
+_DESKTOP_OIDC_ISSUER_ENV = "OCTOP_MAMMOTH_OIDC_ISSUER"
+
 _DATABASE_ENV_KEYS = (
     "OCTOP_DATABASE_URL",
     "OCTOP_DATABASE_DRIVER",
@@ -34,6 +37,15 @@ _DATABASE_ENV_KEYS = (
 def database_env_configured() -> bool:
     """True when any ``OCTOP_DATABASE_*`` env var is set."""
     return any(os.environ.get(k) for k in _DATABASE_ENV_KEYS)
+
+
+def is_desktop_shell() -> bool:
+    """True when the desktop shell launched this process.
+
+    The shell always exports an OIDC issuer; a server / Docker install does not.
+    Desktop has no local setup wizard, so it must never wait for one.
+    """
+    return bool(os.environ.get(_DESKTOP_OIDC_ISSUER_ENV, "").strip())
 
 
 @dataclass(frozen=True)
