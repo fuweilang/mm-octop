@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -150,4 +151,36 @@ func cmpInt(left, right int) int {
 		return 1
 	}
 	return 0
+}
+
+// majorVersion returns the leading release segment: 1 for "1.1.4", 2 for "2.0.0".
+func majorVersion(value string) int {
+	return parseVersion(value).release[0]
+}
+
+// mammothMajorUpdateAllowed lets a test/support build opt into cross-major
+// runtime updates, where the shell, Python runtime and SQLite schema may all
+// differ.
+func mammothMajorUpdateAllowed() bool {
+	switch strings.TrimSpace(strings.ToLower(os.Getenv("OCTOP_DESKTOP_ALLOW_MAJOR_UPDATE"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// portableMajorCompatible reports whether a published runtime may be installed
+// into the current shell. 2.x runtimes are not interchangeable with a 1.x
+// shell, so an old client that still compares "2.0.0 > 1.1.4" must not pull the
+// new runtime and silently break itself: a major bump means "install the new
+// client package once".
+func portableMajorCompatible(current, remote string) bool {
+	if mammothMajorUpdateAllowed() {
+		return true
+	}
+	have, want := majorVersion(current), majorVersion(remote)
+	if have == 0 || want == 0 {
+		return true
+	}
+	return have == want
 }

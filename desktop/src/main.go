@@ -183,6 +183,22 @@ func (a *App) setStatus(msg string) {
 	a.app.Event.Emit("desktop:status", msg)
 }
 
+// setProgress drives the loading bar: 0-100 is a determinate download, any
+// negative value restores the indeterminate slide. Called from the download
+// callback a few times per second, so values are clamped rather than queued.
+func (a *App) setProgress(percent int) {
+	if a.app == nil {
+		return
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	if percent < 0 {
+		percent = -1
+	}
+	a.app.Event.Emit("desktop:progress", percent)
+}
+
 func (a *App) boot() {
 	locale := LocaleEN
 	if a.store != nil {
@@ -208,6 +224,15 @@ func (a *App) boot() {
 		return
 	}
 	root := portableDir()
+	// A runtime staged during the previous session is installed here, before
+	// any service starts. Treat it like ensurePortable replacing the tree so
+	// boot never re-attaches to a process still serving the old code.
+	if a.applyPendingRuntimeUpdate(locale, root) {
+		replaced = true
+		recordBoot("runtime_prefetched", "", nil)
+	} else {
+		discardStalePendingRuntime(portableVersion(root))
+	}
 	a.mu.Lock()
 	stopOctop(a.cmd)
 	a.cmd = nil
@@ -367,13 +392,15 @@ func (a *App) boot() {
 		a.rememberListenPort(port, configured)
 	}
 	recordBoot("ready", "", nil)
+	// The new tree booted; the displaced copy is no longer needed.
+	cleanupPreviousPortable(root)
 	go uploadBootLog(base)
 	a.showDashboard(base)
-	// Runs after the window is up: an 8 MB download must not delay startup, and
-	// the staged bundle is only applied at the next launch anyway.
+	// Runs after the window is up: a background download must not delay
+	// startup, and whatever it stages is installed at the next launch anyway.
 	go func() {
 		time.Sleep(20 * time.Second)
-		a.prefetchMammothDashboardUpdate(locale)
+		a.prefetchMammothUpdate(locale)
 	}()
 }
 

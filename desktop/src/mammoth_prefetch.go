@@ -108,10 +108,12 @@ func autoUpdateDisabled() bool {
 	return false
 }
 
-// prefetchMammothDashboardUpdate checks for a newer SPA in the background and
-// stages it for the next launch. Every failure is logged and swallowed: a
-// flaky network must never affect the running client.
-func (a *App) prefetchMammothDashboardUpdate(locale Locale) {
+// prefetchMammothUpdate keeps an installed client moving without the user
+// clicking anything: a newer runtime is downloaded in the background and
+// installed at the next launch, and a newer SPA-only bundle is staged the same
+// way. Every failure is logged and swallowed: a flaky network must never affect
+// the running client.
+func (a *App) prefetchMammothUpdate(locale Locale) {
 	if autoUpdateDisabled() {
 		return
 	}
@@ -129,9 +131,19 @@ func (a *App) prefetchMammothDashboardUpdate(locale Locale) {
 		log.Printf("mammoth prefetch: latest.json: %v", err)
 		return
 	}
+	// Runtime first: it is the big one, and staging it now means the next launch
+	// is instant instead of a five-minute download in front of the user.
+	if entry, err := platformLatestFor(doc, greenPlat()); err == nil {
+		if portableNeedsMammothUpdate(runtimeVersion, entry.Portable) {
+			if err := stageRuntimeUpdate(runtimeVersion, entry.Portable, now); err != nil {
+				log.Printf("mammoth prefetch: runtime: %v", err)
+			} else {
+				_ = markMammothChecked(now)
+				return
+			}
+		}
+	}
 	if !dashboardNeedsMammothUpdate(doc.Dashboard, readDashboardStamp(), runtimeVersion) {
-		// A runtime update is out of scope here (too big to background); this
-		// only keeps the small SPA moving.
 		_ = markMammothChecked(now)
 		return
 	}

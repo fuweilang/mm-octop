@@ -67,6 +67,8 @@ func TestDesktopCopyCoversEveryGoKey(t *testing.T) {
 		copyStatusMammothInstalling,
 		copyStatusMammothRestarting,
 		copyStatusMammothShellNewer,
+		copyStatusMammothMajorNewer,
+		copyStatusMammothApplyingStaged,
 		copyErrorMammothUpdateFailed,
 		copyErrorMammothSHAMismatch,
 		copyErrorBackupFailed,

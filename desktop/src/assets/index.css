@@ -420,6 +420,10 @@
         background: var(--brand);
         animation: loading-slide 1.2s ease-in-out infinite;
       }
+      .loading-bar.is-determinate .loading-bar-fill {
+        animation: none;
+        transition: width 0.25s ease-out;
+      }
       .loading-status {
         margin: 0;
         width: 100%;

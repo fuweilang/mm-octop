@@ -123,6 +123,21 @@ func portableNeedsMammothUpdate(current string, remote *mammothArtifact) bool {
 	if current == "" {
 		return true
 	}
+	if !portableMajorCompatible(current, remote.Version) {
+		return false
+	}
+	return compareVersions(remote.Version, current) > 0
+}
+
+// portableMajorUpgradeAvailable reports a published runtime this shell cannot
+// install by itself: the user needs the new client package once.
+func portableMajorUpgradeAvailable(current string, remote *mammothArtifact) bool {
+	if remote == nil || strings.TrimSpace(remote.Version) == "" {
+		return false
+	}
+	if current == "" || portableMajorCompatible(current, remote.Version) {
+		return false
+	}
 	return compareVersions(remote.Version, current) > 0
 }
 
@@ -471,16 +486,19 @@ func (a *App) applyDashboardUpdate(locale Locale, previousURL, root string, arti
 		"dashboard-"+safeVersion(artifact.Version)+".zip",
 	)
 	a.setStatus(desktopText(locale, copyStatusMammothDashboardDownloading, 0))
+	a.setProgress(0)
 	sum, err := downloadFileSHA256(nil, artifact.URL, zipPath, func(done, total int64) {
 		if total <= 0 {
 			return
 		}
 		a.setStatus(desktopText(locale, copyStatusMammothDashboardDownloading, done*100/total))
+		a.setProgress(int(done * 100 / total))
 	})
 	if err != nil {
 		a.failMammothUpdate(locale, previousURL, err)
 		return
 	}
+	a.setProgress(-1)
 	a.setStatus(desktopText(locale, copyStatusMammothVerifying))
 	if !sha256HexEqual(sum, artifact.SHA256) {
 		_ = os.Remove(zipPath)
@@ -638,6 +656,16 @@ func (a *App) runMammothUpdate() {
 	wantPortable := portableNeedsMammothUpdate(current, entry.Portable)
 	shellNotice := shellNeedsMammothNotice(entry.Shell)
 
+	if !wantPortable && portableMajorUpgradeAvailable(current, entry.Portable) {
+		// Cross-major releases ship a new shell + runtime + schema; installing
+		// the new runtime into this shell would break it. Point at the installer
+		// instead of downloading 200+ MB that cannot run.
+		a.setStatus(desktopText(locale, copyStatusMammothMajorNewer, entry.Portable.Version))
+		time.Sleep(2000 * time.Millisecond)
+		a.restoreDashboard(previousURL)
+		return
+	}
+
 	if !wantPortable {
 		// The runtime is current; only the SPA may be newer. Downloading the
 		// 8 MB dashboard bundle instead of the 220 MB portable keeps a routine
@@ -661,18 +689,29 @@ func (a *App) runMammothUpdate() {
 
 	artifact := entry.Portable
 	a.setStatus(desktopText(locale, copyStatusMammothDownloading, artifact.Version))
+	a.setProgress(-1)
 	cacheDir := filepath.Join(octopHome(), "cache", "mammoth-update")
 	zipPath := filepath.Join(cacheDir, fmt.Sprintf("portable-%s-%s.zip", plat, safeVersion(artifact.Version)))
-	sum, err := downloadFileSHA256(nil, artifact.URL, zipPath, func(done, total int64) {
-		if total <= 0 {
-			return
-		}
-		a.setStatus(desktopText(locale, copyStatusMammothDownloadingPercent, artifact.Version, done*100/total))
-	})
+	var sum string
+	if stagedPath, ok := stagedRuntimeZip(artifact); ok {
+		// The background prefetch already fetched this exact build; verifying it
+		// takes a couple of seconds, downloading 220 MB again does not.
+		zipPath = stagedPath
+		sum, err = sha256File(zipPath)
+	} else {
+		sum, err = downloadFileSHA256(nil, artifact.URL, zipPath, func(done, total int64) {
+			if total <= 0 {
+				return
+			}
+			a.setStatus(desktopText(locale, copyStatusMammothDownloadingPercent, artifact.Version, done*100/total))
+			a.setProgress(int(done * 100 / total))
+		})
+	}
 	if err != nil {
 		a.failMammothUpdate(locale, previousURL, err)
 		return
 	}
+	a.setProgress(-1)
 	a.setStatus(desktopText(locale, copyStatusMammothVerifying))
 	if !sha256HexEqual(sum, artifact.SHA256) {
 		_ = os.Remove(zipPath)

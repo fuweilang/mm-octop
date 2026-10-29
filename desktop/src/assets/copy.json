@@ -71,7 +71,9 @@
     "legacyCheckHint": "检查是否还装着旧版「猛犸AI」",
     "legacyCheckLabel": "旧版 App",
     "legacyRemoved": "旧版「猛犸AI」已移到废纸篓。",
-    "legacyDeferred": "已记下，本次不再提示。可随时点「检查旧版」。"
+    "legacyDeferred": "已记下，本次不再提示。可随时点「检查旧版」。",
+    "status.mammoth_major_newer": "运行环境需要新版客户端（%s）。请从官网下载并安装新版客户端，安装后会自动保持更新。",
+    "status.mammoth_applying_staged": "正在应用已下载的运行环境 %s…"
   },
   "en": {
     "status.connecting": "Connecting to 猛犸AI…",
@@ -145,6 +147,8 @@
     "legacyCheckHint": "Check whether the old 猛犸AI is still installed",
     "legacyCheckLabel": "Old app",
     "legacyRemoved": "The old 猛犸AI was moved to the Trash.",
-    "legacyDeferred": "Noted. You can run “Check again” any time."
+    "legacyDeferred": "Noted. You can run “Check again” any time.",
+    "status.mammoth_major_newer": "Runtime %s requires a newer client. Download and install the new client once from the website; it keeps itself up to date afterwards.",
+    "status.mammoth_applying_staged": "Applying the downloaded runtime %s…"
   }
 }

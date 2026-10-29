@@ -27,6 +27,8 @@ const (
 	copyStatusMammothInstalling           = "status.mammoth_installing"
 	copyStatusMammothRestarting           = "status.mammoth_restarting"
 	copyStatusMammothShellNewer           = "status.mammoth_shell_newer"
+	copyStatusMammothMajorNewer           = "status.mammoth_major_newer"
+	copyStatusMammothApplyingStaged       = "status.mammoth_applying_staged"
 	copyStatusMammothDownloadingPercent   = "status.mammoth_downloading_percent"
 	copyStatusMammothDashboardDownloading = "status.mammoth_dashboard_downloading"
 	copyStatusMammothDashboardInstalling  = "status.mammoth_dashboard_installing"

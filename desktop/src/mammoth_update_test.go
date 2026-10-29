@@ -31,6 +31,27 @@ func TestPortableNeedsMammothUpdate(t *testing.T) {
 	}
 }
 
+// A 1.x client must not treat 2.x as a normal update: the shell, Python runtime
+// and schema ship together and only the new installer can carry them.
+func TestPortableNeedsMammothUpdateBlocksMajorJump(t *testing.T) {
+	art := &mammothArtifact{Version: "2.0.0", URL: "https://example/x.zip", SHA256: "abc"}
+	if portableNeedsMammothUpdate("1.1.4", art) {
+		t.Fatal("a major runtime jump must not look like a routine update")
+	}
+	if !portableMajorUpgradeAvailable("1.1.4", art) {
+		t.Fatal("a major jump should be reported as needing a new client")
+	}
+	if portableMajorUpgradeAvailable("1.1.4", &mammothArtifact{Version: "1.1.5", URL: "https://x", SHA256: "abc"}) {
+		t.Fatal("a minor upgrade is a normal update, not a new client")
+	}
+
+	t.Setenv("OCTOP_DESKTOP_ALLOW_MAJOR_UPDATE", "1")
+	t.Cleanup(func() { t.Setenv("OCTOP_DESKTOP_ALLOW_MAJOR_UPDATE", "") })
+	if !portableNeedsMammothUpdate("1.1.4", art) {
+		t.Fatal("the override must still allow cross-major installs for test builds")
+	}
+}
+
 func TestShellNeedsMammothNotice(t *testing.T) {
 	prev := desktopShellVersion
 	t.Cleanup(func() { desktopShellVersion = prev })

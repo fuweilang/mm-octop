@@ -241,3 +241,26 @@
         );
         document.getElementById("loading-panel").classList.toggle("is-error", stuck);
       });
+
+      // 0-100 turns the decorative slide into a real download progress bar;
+      // a negative value goes back to "working, no percentage yet" (verify,
+      // unzip, restart), which is honest instead of a frozen 100%.
+      Events.On("desktop:progress", (ev) => {
+        const raw = typeof ev === "number" ? ev : Number(ev?.data ?? ev);
+        const bar = document.querySelector(".loading-bar");
+        const fill = document.querySelector(".loading-bar-fill");
+        if (!bar || !fill) return;
+        const value = Number.isFinite(raw) ? raw : -1;
+        if (value < 0) {
+          bar.classList.remove("is-determinate");
+          bar.removeAttribute("aria-valuenow");
+          bar.setAttribute("aria-hidden", "true");
+          fill.style.width = "";
+          return;
+        }
+        const pct = Math.max(0, Math.min(100, value));
+        bar.classList.add("is-determinate");
+        bar.removeAttribute("aria-hidden");
+        bar.setAttribute("aria-valuenow", String(pct));
+        fill.style.width = pct + "%";
+      });
