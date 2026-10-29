@@ -30,6 +30,7 @@ def test_desktop_login_rejects_proxied_visitors() -> None:
 
 def test_exempt_paths() -> None:
     assert is_jwt_exempt_path("/api/health")
+    assert is_jwt_exempt_path("/api/version")
     assert is_jwt_exempt_path("/api/health/")
     assert is_jwt_exempt_path("/api/setup/status")
     assert is_jwt_exempt_path("/api/auth/login")

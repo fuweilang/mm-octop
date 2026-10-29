@@ -40,6 +40,8 @@ _JWT_EXEMPT_PREFIXES = (
 )
 _JWT_EXEMPT_EXACT = (
     "/api/health",
+    # 版本号要能在登录前读到（客户端角标、宝塔探活）。
+    "/api/version",
     # Boot diagnostics: the shell reports before anyone signs in (rate-limited).
     "/api/client-log",
     "/api/auth/login",
