@@ -91,9 +91,7 @@ def _claim_wants_local_admin_bypass(claims: dict[str, Any]) -> bool:
     role (including ``platform_admin``). Org OWNER never implies local admin.
     """
     role = claims.get("platform_role")
-    if isinstance(role, str) and role.strip() == _PLATFORM_SUPER_ROLE:
-        return True
-    return False
+    return isinstance(role, str) and role.strip() == _PLATFORM_SUPER_ROLE
 
 
 def _claim_permissions(claims: dict[str, Any]) -> builtins.list[str] | None:
@@ -121,11 +119,7 @@ def _claim_permissions(claims: dict[str, Any]) -> builtins.list[str] | None:
         except (ValueError, TypeError):
             return None
         if isinstance(parsed, list):
-            return [
-                item.strip()
-                for item in parsed
-                if isinstance(item, str) and item.strip()
-            ]
+            return [item.strip() for item in parsed if isinstance(item, str) and item.strip()]
     return None
 
 
@@ -220,7 +214,10 @@ class UserManager:
                     ErrorCode.EMAIL_TAKEN,
                     f"email {normalized_email!r} already exists",
                 )
-            if cleaned_phone is not None and self._services.user_repo.get_by_phone(cleaned_phone) is not None:
+            if (
+                cleaned_phone is not None
+                and self._services.user_repo.get_by_phone(cleaned_phone) is not None
+            ):
                 raise OctopError(
                     ErrorCode.USERNAME_TAKEN,
                     f"phone {cleaned_phone!r} already exists",
@@ -331,9 +328,7 @@ class UserManager:
                     else None
                 )
                 lookup_name = (
-                    preferred.strip()
-                    if isinstance(preferred, str) and preferred.strip()
-                    else None
+                    preferred.strip() if isinstance(preferred, str) and preferred.strip() else None
                 )
                 existing = None
                 if lookup_phone:

@@ -92,11 +92,7 @@ class UserRow:
             permissions=_parse_permissions(r["permissions"] if "permissions" in keys else None),
             role_name=role_name or None,
             avatar_icon=avatar_icon or None,
-            phone=(
-                str(r["phone"]).strip()
-                if "phone" in keys and r["phone"]
-                else None
-            ),
+            phone=(str(r["phone"]).strip() if "phone" in keys and r["phone"] else None),
             enterprise_name=(
                 str(r["enterprise_name"]).strip()
                 if "enterprise_name" in keys and r["enterprise_name"]

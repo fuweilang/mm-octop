@@ -415,9 +415,7 @@ def _transcode_to_png(data: bytes) -> tuple[bytes, str] | None:
         with Image.open(BytesIO(data)) as src:
             img = ImageOps.exif_transpose(src)
             img.thumbnail((VISION_MAX_SIDE, VISION_MAX_SIDE), Image.Resampling.LANCZOS)
-            if img.mode in ("RGBA", "LA") or (
-                img.mode == "P" and "transparency" in img.info
-            ):
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
                 out = img.convert("RGBA")
             elif img.mode in ("RGB", "L"):
                 out = img.convert("RGB")
@@ -520,9 +518,7 @@ async def materialize_image_part(
         normalized_bytes, normalized_mime = normalized
         if normalized_bytes is raw:
             return make_image_url_block(part.data, normalized_mime)
-        return make_image_url_block(
-            base64.b64encode(normalized_bytes).decode(), normalized_mime
-        )
+        return make_image_url_block(base64.b64encode(normalized_bytes).decode(), normalized_mime)
 
     if part.url:
         downloaded = await _download_image_url(part.url)

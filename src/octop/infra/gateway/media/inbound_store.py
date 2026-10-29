@@ -496,9 +496,7 @@ async def write_inbound(
         display_name = "upload.bin"
     if not keep_name and not Path(display_name).suffix:
         display_name = f"{display_name}{inbound_extension(display_name, normalized_type)}"
-    stored_name = (
-        display_name if keep_name else build_timestamped_inbound_name(display_name)
-    )
+    stored_name = display_name if keep_name else build_timestamped_inbound_name(display_name)
     path = await _unique_inbound_path(workspace, stored_name, base_dir=base_dir)
     await workspace.aupload_bytes(path, data)
     return InboundFile(

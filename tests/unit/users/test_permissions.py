@@ -11,8 +11,8 @@ from octop.infra.users.permissions import (
     BASELINE_PERMISSIONS,
     PERMISSIONS,
     effective_permissions,
-    user_has_permission,
     filter_octop_permission_keys,
+    user_has_permission,
     validate_permission_keys,
 )
 

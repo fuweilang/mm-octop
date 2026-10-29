@@ -4195,7 +4195,5 @@ class AgentManager:
         if "bootstrap_enabled" in _HARNESS_AGENT_CONFIG_FIELDS:
             updates["bootstrap_enabled"] = False
         if "system_prompt" in _HARNESS_AGENT_CONFIG_FIELDS:
-            updates["system_prompt"] = with_brand(
-                host_system_prompt(row, self._repos.user_repo)
-            )
+            updates["system_prompt"] = with_brand(host_system_prompt(row, self._repos.user_repo))
         return replace(cfg, **updates) if updates else cfg

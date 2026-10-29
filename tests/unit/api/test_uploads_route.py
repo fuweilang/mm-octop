@@ -36,7 +36,9 @@ async def test_upload_route_keeps_folder_tree(monkeypatch: pytest.MonkeyPatch) -
     with tempfile.TemporaryDirectory() as ws_dir:
         workspace = _workspace(ws_dir)
 
-        async def fake_require_running_workspace(*args: object, **kwargs: object) -> BackendWorkspace:
+        async def fake_require_running_workspace(
+            *args: object, **kwargs: object
+        ) -> BackendWorkspace:
             return workspace
 
         monkeypatch.setattr(
@@ -64,7 +66,9 @@ async def test_upload_route_flat_upload_still_timestamped(
     with tempfile.TemporaryDirectory() as ws_dir:
         workspace = _workspace(ws_dir)
 
-        async def fake_require_running_workspace(*args: object, **kwargs: object) -> BackendWorkspace:
+        async def fake_require_running_workspace(
+            *args: object, **kwargs: object
+        ) -> BackendWorkspace:
             return workspace
 
         monkeypatch.setattr(
