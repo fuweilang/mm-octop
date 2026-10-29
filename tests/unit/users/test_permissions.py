@@ -81,7 +81,7 @@ def test_categories_match_nav_groups() -> None:
     assert PERMISSIONS["envs"].page == "advanced"
     assert PERMISSIONS["voice"].page == "models"
     assert PERMISSIONS["search"].page == "models"
-    assert PERMISSIONS["knowledge_settings"].page == "advanced"
+    assert PERMISSIONS["knowledge_settings"].page == "knowledge-bases"
     assert PERMISSIONS["knowledge_settings"].category == "admin"
     assert "knowledge_settings" not in BASELINE_PERMISSIONS
     assert PERMISSIONS["users"].page == "users"

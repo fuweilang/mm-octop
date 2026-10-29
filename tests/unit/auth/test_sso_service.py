@@ -207,7 +207,7 @@ async def test_callback_error_redirect_prefers_dashboard_origin(service: SsoServ
     denied = await service.handle_callback(
         code=None, state=None, error="access_denied", public_base="https://api.example"
     )
-    assert denied.url == "https://dashboard.example/login?oidc_error=denied"
+    assert denied.url == "https://dashboard.example/agent/login?oidc_error=denied"
 
 
 @pytest.mark.asyncio
@@ -218,8 +218,8 @@ async def test_callback_maps_denied_bad_state_and_invalid_token(service: SsoServ
     bad_state = await service.handle_callback(
         code="code", state="unknown", error=None, public_base="https://octop.example"
     )
-    assert denied.url == "https://octop.example/login?oidc_error=denied"
-    assert bad_state.url == "https://octop.example/login?oidc_error=state"
+    assert denied.url == "https://octop.example/agent/login?oidc_error=denied"
+    assert bad_state.url == "https://octop.example/agent/login?oidc_error=state"
 
     provider = configure_provider(service)
     add_login_state(service, provider.id)
@@ -227,7 +227,7 @@ async def test_callback_maps_denied_bad_state_and_invalid_token(service: SsoServ
         invalid = await service.handle_callback(
             code="code", state="valid-state", error=None, public_base="https://octop.example"
         )
-    assert invalid.url == "https://octop.example/login?oidc_error=invalid_token"
+    assert invalid.url == "https://octop.example/agent/login?oidc_error=invalid_token"
 
 
 @pytest.mark.asyncio
@@ -273,7 +273,7 @@ async def test_callback_exchanges_code_and_attaches_login_code(service: SsoServi
             public_base="https://octop.example",
         )
 
-    assert result.url.startswith("https://octop.example/login/oidc/complete#code=")
+    assert result.url.startswith("https://octop.example/agent/login/oidc/complete#code=")
     assert "redirect=%2Fsettings" in result.url
     assert requests[-1].url == httpx.URL("https://issuer.example/token")
     assert requests[-1].method == "POST"
@@ -322,7 +322,7 @@ async def test_callback_verifies_id_token_against_discovery_issuer(
             public_base="https://octop.example",
         )
 
-    assert result.url.startswith("https://octop.example/login/oidc/complete#code=")
+    assert result.url.startswith("https://octop.example/agent/login/oidc/complete#code=")
     assert verify.call_args.kwargs["issuer"] == discovery_issuer
 
 

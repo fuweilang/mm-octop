@@ -13,7 +13,7 @@ import pytest
 from octop.config import DatabaseConfig
 from octop.infra.backup.manifest import MANIFEST_VERSION, BackupManifest
 from octop.infra.backup.system_archive import create_system_backup, restore_system_backup
-from octop.infra.db.migrate import run_migrations
+from octop.infra.db.migrate import _max_discovered_version, run_migrations
 from octop.infra.db.pool import SqlitePool
 from octop.infra.errors import ErrorCode, OctopError
 from octop.infra.utils.paths import PathLayout
@@ -1230,9 +1230,10 @@ def test_refuse_newer_schema_backup_before_database_replace(
         )
 
     assert excinfo.value.code == ErrorCode.BACKUP_SCHEMA_INCOMPATIBLE
+    # Don't pin the migration number; every new migration would break this.
     assert excinfo.value.details == {
         "archive_schema_version": 999,
-        "runtime_schema_version": 21,
+        "runtime_schema_version": _max_discovered_version(pool.dialect),
     }
     with pool.connect() as conn:
         assert (

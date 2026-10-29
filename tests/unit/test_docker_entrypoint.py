@@ -44,7 +44,10 @@ def _bash(script: str, *, env: dict[str, str] | None = None) -> subprocess.Compl
 @posix_only
 def test_entrypoint_common_passwords_match_python() -> None:
     text = ENTRYPOINT.read_text(encoding="utf-8")
-    match = re.search(r'^_OCTOP_COMMON_PASSWORDS="([^"]+)"$', text, re.MULTILINE)
+    # Both sides may be empty: product policy dropped the common-password
+    # denylist and only enforces a length floor. The declaration must still
+    # exist so the two validators cannot drift silently.
+    match = re.search(r'^_OCTOP_COMMON_PASSWORDS="([^"]*)"$', text, re.MULTILINE)
     assert match, "entrypoint must declare _OCTOP_COMMON_PASSWORDS"
     shell_set = set(match.group(1).split())
     assert shell_set == set(_COMMON_PASSWORDS)
@@ -57,6 +60,12 @@ _VALID_PASSWORDS = (
     "abcdefgh1",
     "A1b2c3d4",
     "MyOctop2026",
+    # No denylist any more: anything >= 6 characters passes, even if weak.
+    "abcdefgh",
+    "12345678",
+    "password1",
+    "Octop123",
+    "ADMIN123",
 )
 
 _INVALID_PASSWORDS = (
@@ -170,11 +179,7 @@ def test_first_boot_valid_password_creates_admin(tmp_path: Path, password: str) 
         None,
         "",
         "Ab1",
-        "abcdefgh",
-        "12345678",
-        "password1",
-        "Octop123",
-        "ADMIN123",
+        "12345",
     ],
 )
 def test_first_boot_invalid_or_missing_password_starts_wizard(
