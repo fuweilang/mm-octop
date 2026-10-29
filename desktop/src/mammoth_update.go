@@ -183,6 +183,19 @@ func dashboardNeedsMammothUpdate(remote *mammothArtifact, stamp dashboardStamp, 
 // “.partial“ when the server honours “Range“. onProgress (optional) is
 // called at most a few times per second so the UI can show a percentage
 // instead of an apparently frozen "downloading" line.
+// downloadMaxAttempts covers the first try plus three retries. Server-side
+// hiccups on a 220 MB portable are common enough that failing the whole update
+// on the first dropped connection reads as "the client is broken".
+const downloadMaxAttempts = 4
+
+// mammothDownloadBackoff is the base delay between attempts (1s, 2s, 4s).
+// Tests shrink it so retry cases stay fast.
+var mammothDownloadBackoff = time.Second
+
+// downloadFileSHA256 fetches fileURL into dest, resuming from a previous
+// “.partial“ when the server honours “Range“ and retrying transient
+// failures. onProgress (optional) is called at most a few times per second so
+// the UI can show a percentage instead of an apparently frozen "downloading".
 func downloadFileSHA256(
 	client *http.Client,
 	fileURL, dest string,
@@ -194,21 +207,48 @@ func downloadFileSHA256(
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", err
 	}
+	var lastErr error
+	for attempt := 1; attempt <= downloadMaxAttempts; attempt++ {
+		if attempt > 1 {
+			delay := mammothDownloadBackoff * time.Duration(1<<(attempt-2))
+			log.Printf("mammoth download: attempt %d failed (%v); retrying in %s", attempt-1, lastErr, delay)
+			time.Sleep(delay)
+		}
+		sum, retryable, err := downloadFileOnce(client, fileURL, dest, onProgress)
+		if err == nil {
+			return sum, nil
+		}
+		lastErr = err
+		if !retryable {
+			return "", err
+		}
+	}
+	return "", fmt.Errorf("%w (after %d attempts)", lastErr, downloadMaxAttempts)
+}
+
+// downloadFileOnce performs a single (resumable) download attempt. retryable
+// reports whether the failure looks transient: network errors, 5xx and 429 are
+// worth another try, while a 403/404 will never succeed by retrying.
+func downloadFileOnce(
+	client *http.Client,
+	fileURL, dest string,
+	onProgress func(done, total int64),
+) (sum string, retryable bool, err error) {
 	tmp := dest + ".partial"
 	var start int64
-	if info, err := os.Stat(tmp); err == nil && info.Size() > 0 {
+	if info, statErr := os.Stat(tmp); statErr == nil && info.Size() > 0 {
 		start = info.Size()
 	}
 	req, err := http.NewRequest(http.MethodGet, fileURL, nil)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if start > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", start))
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", true, err
 	}
 	defer resp.Body.Close()
 	switch {
@@ -218,7 +258,8 @@ func downloadFileSHA256(
 		// server ignored the range (or we started fresh): rewrite from zero
 		start = 0
 	default:
-		return "", fmt.Errorf("download HTTP %d", resp.StatusCode)
+		retry := resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests
+		return "", retry, fmt.Errorf("download HTTP %d", resp.StatusCode)
 	}
 
 	flags := os.O_CREATE | os.O_WRONLY
@@ -229,20 +270,20 @@ func downloadFileSHA256(
 	}
 	out, err := os.OpenFile(tmp, flags, 0o644)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	sum := sha256.New()
+	digest := sha256.New()
 	if start > 0 {
 		existing, readErr := os.Open(tmp)
 		if readErr != nil {
 			_ = out.Close()
-			return "", readErr
+			return "", false, readErr
 		}
-		_, readErr = io.Copy(sum, existing)
+		_, readErr = io.Copy(digest, existing)
 		_ = existing.Close()
 		if readErr != nil {
 			_ = out.Close()
-			return "", readErr
+			return "", false, readErr
 		}
 	}
 	total := int64(0)
@@ -252,21 +293,21 @@ func downloadFileSHA256(
 		// Some servers stream 206 responses without Content-Length; the total is
 		// still available as "bytes start-end/total".
 		if idx := strings.LastIndex(cr, "/"); idx >= 0 {
-			if parsed, err := strconv.ParseInt(strings.TrimSpace(cr[idx+1:]), 10, 64); err == nil {
+			if parsed, parseErr := strconv.ParseInt(strings.TrimSpace(cr[idx+1:]), 10, 64); parseErr == nil {
 				total = parsed
 			}
 		}
 	}
-	writer := io.MultiWriter(out, sum)
+	writer := io.MultiWriter(out, digest)
 	buf := make([]byte, 256*1024)
-	var done = start
+	done := start
 	lastReport := time.Now()
 	for {
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, writeErr := writer.Write(buf[:n]); writeErr != nil {
 				_ = out.Close()
-				return "", writeErr
+				return "", false, writeErr
 			}
 			done += int64(n)
 			if onProgress != nil && total > 0 && time.Since(lastReport) >= 200*time.Millisecond {
@@ -280,19 +321,19 @@ func downloadFileSHA256(
 		if readErr != nil {
 			_ = out.Close()
 			// Keep .partial so the next attempt resumes instead of restarting.
-			return "", readErr
+			return "", true, readErr
 		}
 	}
 	if onProgress != nil && total > 0 {
 		onProgress(total, total)
 	}
 	if err := out.Close(); err != nil {
-		return "", err
+		return "", false, err
 	}
 	if err := os.Rename(tmp, dest); err != nil {
-		return "", err
+		return "", false, err
 	}
-	return hex.EncodeToString(sum.Sum(nil)), nil
+	return hex.EncodeToString(digest.Sum(nil)), false, nil
 }
 
 func sha256HexEqual(got, want string) bool {

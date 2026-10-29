@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPortableNeedsMammothUpdate(t *testing.T) {
@@ -412,5 +413,89 @@ func TestProbeDashboardServes(t *testing.T) {
 	t.Cleanup(failing.Close)
 	if err := probeDashboardServes(failing.URL); err == nil {
 		t.Fatal("expected HTTP 500 to be rejected")
+	}
+}
+
+func TestDownloadFileSHA256RetriesTransientFailures(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OCTOP_HOME", home)
+
+	prevBackoff := mammothDownloadBackoff
+	mammothDownloadBackoff = time.Millisecond
+	t.Cleanup(func() { mammothDownloadBackoff = prevBackoff })
+
+	payload := []byte(strings.Repeat("retry-me-", 1024))
+	sum := sha256.Sum256(payload)
+	want := hex.EncodeToString(sum[:])
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls < 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(payload)
+	}))
+	t.Cleanup(server.Close)
+
+	dest := filepath.Join(home, "cache", "portable.zip")
+	got, err := downloadFileSHA256(server.Client(), server.URL, dest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sha256HexEqual(got, want) {
+		t.Fatalf("sha got %s want %s", got, want)
+	}
+	if calls != 3 {
+		t.Fatalf("expected 3 attempts, got %d", calls)
+	}
+}
+
+func TestDownloadFileSHA256DoesNotRetryMissingFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OCTOP_HOME", home)
+
+	prevBackoff := mammothDownloadBackoff
+	mammothDownloadBackoff = time.Millisecond
+	t.Cleanup(func() { mammothDownloadBackoff = prevBackoff })
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(server.Close)
+
+	dest := filepath.Join(home, "cache", "missing.zip")
+	if _, err := downloadFileSHA256(server.Client(), server.URL, dest, nil); err == nil {
+		t.Fatal("expected 404 to fail")
+	}
+	if calls != 1 {
+		t.Fatalf("404 must not be retried, got %d attempts", calls)
+	}
+}
+
+func TestDownloadFileSHA256GivesUpAfterMaxAttempts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OCTOP_HOME", home)
+
+	prevBackoff := mammothDownloadBackoff
+	mammothDownloadBackoff = time.Millisecond
+	t.Cleanup(func() { mammothDownloadBackoff = prevBackoff })
+
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(server.Close)
+
+	dest := filepath.Join(home, "cache", "down.zip")
+	if _, err := downloadFileSHA256(server.Client(), server.URL, dest, nil); err == nil {
+		t.Fatal("expected persistent 502 to fail")
+	}
+	if calls != downloadMaxAttempts {
+		t.Fatalf("attempts = %d, want %d", calls, downloadMaxAttempts)
 	}
 }
