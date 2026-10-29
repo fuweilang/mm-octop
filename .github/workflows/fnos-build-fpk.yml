@@ -196,7 +196,7 @@ jobs:
           set -e
           echo "=== build frontend ==="
           cd dashboard
-          pnpm install --frozen-lockfile --prefer-offline
+          NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ pnpm install --frozen-lockfile --prefer-offline
           NODE_ENV=production NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
           cd ..
           echo "=== frontend output ==="
@@ -320,7 +320,7 @@ jobs:
           set -e
           echo "=== build frontend ==="
           cd dashboard
-          pnpm install --frozen-lockfile --prefer-offline
+          NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ pnpm install --frozen-lockfile --prefer-offline
           NODE_ENV=production NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
           cd ..
           echo "=== frontend output ==="

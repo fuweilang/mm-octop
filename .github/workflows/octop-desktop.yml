@@ -60,6 +60,10 @@ jobs:
     name: Build dashboard
     if: github.event_name != 'workflow_dispatch' || github.event.inputs.attach_from_run == ''
     runs-on: ubuntu-latest
+    env:
+      # dashboard/.npmrc 指向腾讯云镜像（给国内用），GitHub runner 在境外会
+      # 拉包 ECONNRESET，这里覆盖回官方源。
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
     steps:
       - uses: actions/checkout@v5
 

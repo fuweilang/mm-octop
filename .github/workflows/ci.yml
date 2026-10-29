@@ -80,6 +80,9 @@ jobs:
   web:
     name: Web / dashboard
     runs-on: ubuntu-latest
+    env:
+      # 同上：镜像源只给国内开发机用，CI 走官方 registry。
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
     steps:
       - uses: actions/checkout@v5
 
