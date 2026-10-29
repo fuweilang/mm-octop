@@ -119,10 +119,15 @@ export const DEFAULT_KNOWLEDGE_LIMITS: KnowledgeLimits = {
 };
 
 export const knowledgeBasesApi = {
-  getCapability: (agentId?: string | null) =>
-    request<KnowledgeCapability>("/knowledge-bases/capability", {
-      headers: bridgeAgentHeaders(agentId),
-    }),
+  getCapability: (agentId?: string | null) => {
+    const headers = bridgeAgentHeaders(agentId);
+    if (!headers) {
+      return request<KnowledgeCapability>("/knowledge-bases/capability");
+    }
+    return request<KnowledgeCapability>("/knowledge-bases/capability", {
+      headers,
+    });
+  },
 
   setFeature: (body: {
     enabled: boolean;
