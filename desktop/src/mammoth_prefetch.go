@@ -143,6 +143,14 @@ func (a *App) prefetchMammothUpdate(locale Locale) {
 			}
 		}
 	}
+	if codePatchNeedsUpdate(doc.Code, readCodePatchStamp(), runtimeVersion) {
+		if err := stageCodePatch(now, doc.Code, runtimeVersion); err != nil {
+			log.Printf("mammoth prefetch: code: %v", err)
+		} else {
+			_ = markMammothChecked(now)
+			return
+		}
+	}
 	if !dashboardNeedsMammothUpdate(doc.Dashboard, readDashboardStamp(), runtimeVersion) {
 		_ = markMammothChecked(now)
 		return

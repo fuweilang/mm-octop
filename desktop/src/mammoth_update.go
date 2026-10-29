@@ -54,7 +54,10 @@ type mammothLatestFile struct {
 	SchemaVersion int `json:"schema_version"`
 	// Dashboard is platform independent: the SPA bundle is the same bytes on
 	// macOS and Windows, so it ships once at the top level.
-	Dashboard *mammothArtifact                 `json:"dashboard"`
+	Dashboard *mammothArtifact `json:"dashboard"`
+	// Code carries a Python-only patch for one exact runtime version; the SPA
+	// keeps its own dashboard channel.
+	Code      *mammothCodeArtifact             `json:"code"`
 	Platforms map[string]mammothPlatformLatest `json:"platforms"`
 }
 

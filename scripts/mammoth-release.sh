@@ -13,11 +13,14 @@
 #   scripts/mammoth-release.sh --version 1.1.4 --artifacts dist --portable --shell
 #   scripts/mammoth-release.sh --version 1.1.4 --artifacts ~/Downloads/octop-1.1.4 \
 #       --platform darwin-arm64 --portable --dashboard
+#   scripts/mammoth-release.sh --version 2.0.0.1 --code --runtime 2.0.0   # 纯代码补丁
 #
 # Flags:
 #   --version V        artifact version written into latest.json (required)
 #   --artifacts DIR    where portable/shell artifacts live (default: dist)
 #   --dashboard        build + publish the platform-independent SPA bundle
+#   --code             build + publish a python-only patch (needs --runtime)
+#   --runtime V        runtime version the code patch is built for
 #   --portable         publish portable zip(s) from --artifacts
 #   --shell            publish shell installer(s) from --artifacts
 #   --platform P       restrict to one platform (repeatable);
@@ -35,6 +38,8 @@ artifacts="dist"
 want_dashboard=0
 want_portable=0
 want_shell=0
+want_code=0
+code_runtime=""
 platform_filter=""
 latest=""
 host="root@124.223.179.250"
@@ -58,6 +63,8 @@ while [ $# -gt 0 ]; do
     --version) version="${2:?--version needs a value}"; shift 2 ;;
     --artifacts) artifacts="${2:?--artifacts needs a dir}"; shift 2 ;;
     --dashboard) want_dashboard=1; shift ;;
+    --code) want_code=1; shift ;;
+    --runtime) code_runtime="${2:?--runtime needs a value}"; shift 2 ;;
     --portable) want_portable=1; shift ;;
     --shell) want_shell=1; shift ;;
     --platform) platform_filter="$platform_filter${2:?--platform needs a value} "; shift 2 ;;
@@ -73,8 +80,11 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$version" ] || die "--version is required"
-[ $((want_dashboard + want_portable + want_shell)) -gt 0 ] || \
-  die "nothing to publish: pass --dashboard, --portable and/or --shell"
+[ $((want_dashboard + want_portable + want_shell + want_code)) -gt 0 ] || \
+  die "nothing to publish: pass --dashboard, --portable, --shell and/or --code"
+if [ "$want_code" -eq 1 ] && [ -z "$code_runtime" ]; then
+  die "--code needs --runtime (the runtime version it was built against)"
+fi
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
@@ -136,6 +146,19 @@ if [ "$want_dashboard" -eq 1 ]; then
   upload_artifact "$zip"
 fi
 
+if [ "$want_code" -eq 1 ]; then
+  zip="dist/mammoth-code-${version}.zip"
+  if [ "$skip_build" -eq 1 ] && [ -f "$zip" ]; then
+    echo "    reuse $zip"
+  else
+    echo "    building the code patch (no SPA, no runtime)…"
+    run scripts/mammoth-code-release.sh "$version" --runtime "$code_runtime"
+  fi
+  [ "$dry_run" -eq 1 ] || [ -f "$zip" ] || die "code patch build produced no $zip"
+  printf 'code\t%s\n' "$zip" >>"$spec"
+  upload_artifact "$zip"
+fi
+
 shopt -s nullglob
 portable_found=0
 for f in "$artifacts"/*portable*.zip; do
@@ -189,6 +212,7 @@ patch_latest() {
 while IFS="$(printf '\t')" read -r kind a b c; do
   case "$kind" in
     dashboard) patch_latest --dashboard "$a" ;;
+    code) patch_latest --code "$a" --code-runtime "$code_runtime" ;;
     platform) patch_latest --platform "$a" "$b" "$c" ;;
     *) ;;
   esac
@@ -218,6 +242,8 @@ doc = json.load(open(sys.argv[1]))
 items = []
 if doc.get("dashboard"):
     items.append(("dashboard", doc["dashboard"]))
+if doc.get("code"):
+    items.append(("code", doc["code"]))
 for plat, entry in (doc.get("platforms") or {}).items():
     for kind in ("portable", "shell"):
         if entry.get(kind):

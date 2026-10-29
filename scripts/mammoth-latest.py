@@ -20,6 +20,11 @@ Dashboard-only hotfix (top level, applies to every platform)::
     scripts/mammoth-latest.py --file mammoth-latest.json \\
         --version 1.1.4.1 --dashboard dist/mammoth-dashboard-1.1.4.1.zip
 
+Python-only patch for one runtime version (top level)::
+
+    scripts/mammoth-latest.py --file mammoth-latest.json \\
+        --version 2.0.0.1 --code dist/mammoth-code-2.0.0.1.zip --code-runtime 2.0.0
+
 URLs default to ``--url-base`` + the file name; pass ``--portable-url`` /
 ``--shell-url`` / ``--dashboard-url`` for CDN paths.
 """
@@ -54,14 +59,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--portable", type=Path, help="green portable zip")
     parser.add_argument("--shell", type=Path, help="dmg or exe installer")
     parser.add_argument("--dashboard", type=Path, help="platform independent SPA zip")
+    parser.add_argument("--code", type=Path, help="python-only patch zip")
+    parser.add_argument("--code-runtime", help="runtime version a code patch requires")
     parser.add_argument("--url-base", default=DEFAULT_URL_BASE)
     parser.add_argument("--portable-url")
     parser.add_argument("--shell-url")
     parser.add_argument("--dashboard-url")
+    parser.add_argument("--code-url")
     args = parser.parse_args(argv)
 
-    if not (args.portable or args.shell or args.dashboard):
-        parser.error("nothing to publish: pass --portable, --shell and/or --dashboard")
+    if not (args.portable or args.shell or args.dashboard or args.code):
+        parser.error("nothing to publish: pass --portable, --shell, --dashboard and/or --code")
+    if args.code and not args.code_runtime:
+        parser.error("--code requires --code-runtime")
     if (args.portable or args.shell) and not args.platform:
         parser.error("--platform is required with --portable / --shell")
 
@@ -97,6 +107,15 @@ def main(argv: list[str] | None = None) -> int:
             args.version,
             args.dashboard_url or args.url_base + args.dashboard.name,
         )
+
+    if args.code:
+        entry = artifact(
+            args.code,
+            args.version,
+            args.code_url or args.url_base + args.code.name,
+        )
+        entry["runtime"] = args.code_runtime
+        doc["code"] = entry
 
     doc["updated_at"] = datetime.now(UTC).astimezone().isoformat(timespec="seconds")
     args.file.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

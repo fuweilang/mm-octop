@@ -233,6 +233,12 @@ func (a *App) boot() {
 	} else {
 		discardStalePendingRuntime(portableVersion(root))
 	}
+	// A code patch built for this runtime installs before the service starts.
+	// The displaced directory is kept until /api/health says the new code works.
+	codePatched, codePrevious := a.applyPendingCodePatch(locale, root)
+	if !codePatched {
+		discardStalePendingCode(portableVersion(root))
+	}
 	a.mu.Lock()
 	stopOctop(a.cmd)
 	a.cmd = nil
@@ -377,9 +383,13 @@ func (a *App) boot() {
 	base := dashboardURL(host, port)
 	a.setStatus(desktopText(locale, copyStatusStartingService))
 	if err := waitHealth(locale, base, 2*time.Minute); err != nil {
-		a.setStatus(err.Error())
-		recordBoot("health_timeout", err.Error(), nil)
-		return
+		// A freshly applied code patch is the only thing this boot may have
+		// broken; restore it and try once before giving up.
+		if !codePatched || !a.rollbackCodePatch(locale, root, port, base, codePrevious) {
+			a.setStatus(err.Error())
+			recordBoot("health_timeout", err.Error(), nil)
+			return
+		}
 	}
 	if err := writeDesktopPort(port); err != nil {
 		log.Printf("desktop port: %v", err)
