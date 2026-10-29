@@ -43,7 +43,6 @@ import {
 import { sectionsFromLayout, type SidebarNavLayout } from "./sidebarNavLayout";
 import SidebarNavCustomizer from "./SidebarNavCustomizer";
 import ClientDownloadLink from "./ClientDownloadLink";
-import ProductSwitcher from "./ProductSwitcher";
 import styles from "./Sidebar.module.less";
 import { typeSize } from "../utils/mobileTypeScale";
 import { useDesktopChromeStyle } from "../hooks/useDesktopChrome";
@@ -453,7 +452,7 @@ export default function Sidebar({
   const chatRailOpen = showChatRailToggle && onChatPath && chatSidebarOpen;
 
   const isRailCollapsed = collapsed && !isMobile;
-  const wordmarkSrc = `${import.meta.env.BASE_URL}mengma-logo.png`;
+  const brandMarkSrc = `${import.meta.env.BASE_URL}brand-mark.png`;
 
   const selectMinimalPane = useCallback(
     (pane: MinimalNavPane, opts?: { expand?: boolean }) => {
@@ -519,34 +518,26 @@ export default function Sidebar({
   ]);
 
   const brandInner = (
-    <>
-      <div className={styles.brandMain}>
-        <img
-          src={
-            isRailCollapsed
-              ? `${import.meta.env.BASE_URL}pwa-192.png`
-              : wordmarkSrc
-          }
-          alt="猛犸AI"
-          style={{
-            height: isRailCollapsed ? 32 : isMobile ? 38 : 36,
-            width: isRailCollapsed ? 32 : "auto",
-            maxWidth: isRailCollapsed ? 32 : isMobile ? 168 : 132,
-            objectFit: "contain",
-            display: "block",
-            flexShrink: 0,
-            borderRadius: isRailCollapsed ? 8 : undefined,
-          }}
-        />
-        {!isRailCollapsed && !isMobile && (
-          <>
-            <CurrentVersionBadge isMobile={isMobile} />
-            <AppVersionBadge isMobile={isMobile} />
-          </>
-        )}
-      </div>
-      {!isRailCollapsed && <ProductSwitcher />}
-    </>
+    <div className={styles.brandMain}>
+      <img
+        src={brandMarkSrc}
+        alt="猛犸AI"
+        style={{
+          height: isMobile ? 30 : 28,
+          width: isMobile ? 30 : 28,
+          objectFit: "contain",
+          display: "block",
+          flexShrink: 0,
+        }}
+      />
+      {!isRailCollapsed && !isMobile && (
+        <>
+          <span className={styles.brandName}>猛犸AI</span>
+          <CurrentVersionBadge isMobile={isMobile} />
+          <AppVersionBadge isMobile={isMobile} />
+        </>
+      )}
+    </div>
   );
 
   const middleOfficeLabel = t("nav.middle", "中台");
@@ -606,7 +597,14 @@ export default function Sidebar({
     >
       {middleOfficeLink}
       {!isDesktopShell() && <ClientDownloadLink compact={isRailCollapsed} />}
-      <div className={styles.accountBlock}>
+      <div
+        className={styles.accountBlock}
+        style={
+          isRailCollapsed
+            ? { display: "flex", justifyContent: "center" }
+            : undefined
+        }
+      >
         <AvatarDropdown
           user={user}
           onUserChange={setUser}
@@ -877,18 +875,59 @@ export default function Sidebar({
           alignItems: "center",
           gap: 6,
           minWidth: 0,
+          // mac 下交通灯压在左上角：展开态先留 32px 拖拽带，品牌行整体下移，
+          // 220px 侧栏就不用再被 80px 交通灯 inset 挤掉。
           padding: isRailCollapsed
             ? macLights
-              ? "36px 0 12px"
+              ? "32px 0 12px"
               : "12px 0"
             : macLights
-            ? "10px 14px 10px var(--window-controls-inset-start, 80px)"
+            ? "32px 14px 10px"
             : "14px 14px 10px",
           justifyContent: isRailCollapsed ? "center" : "flex-start",
           flexShrink: 0,
         }}
       >
-        {brandInner}
+        {isRailCollapsed ? (
+          <Tooltip title={t("nav.expandSidebar")} placement="right">
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label={t("nav.expandSidebar")}
+              className={styles.brandExpand}
+            >
+              <img
+                src={brandMarkSrc}
+                alt="猛犸AI"
+                style={{ height: 26, width: 26, display: "block" }}
+              />
+            </button>
+          </Tooltip>
+        ) : (
+          <>
+            {brandInner}
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label={t("nav.collapseSidebar")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 30,
+                height: 30,
+                border: "none",
+                borderRadius: "var(--fn-radius-md)",
+                background: "transparent",
+                color: "var(--fn-text-tertiary)",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              <X size={16} strokeWidth={1.8} />
+            </button>
+          </>
+        )}
       </div>
 
       <div

@@ -9,7 +9,7 @@
   border-top: 1px solid var(--fn-border-subtle);
 }
 
-/* 品牌 + 产品切换器同一行 */
+/* 品牌行：logo + 产品名 + 版本号 */
 .brandMain {
   display: flex;
   align-items: center;
@@ -17,6 +17,36 @@
   min-width: 0;
   flex: 1;
   overflow: hidden;
+}
+
+.brandName {
+  flex-shrink: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fn-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 收起态：logo 本身就是展开按钮，56px 窄栏里只放一个元素 */
+.brandExpand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: var(--fn-radius-md);
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--fn-transition-fast);
+
+  &:hover {
+    background: var(--fn-sidebar-item-hover);
+  }
 }
 
 .navGroup {
