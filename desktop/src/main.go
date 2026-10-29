@@ -664,6 +664,12 @@ func main() {
 			return
 		}
 		e.Cancel()
+		// Windows users read the X button as "quit"; hiding to the tray here is
+		// what left several invisible instances running with no way out.
+		if runtime.GOOS == "windows" {
+			api.requestQuit()
+			return
+		}
 		api.hideToTray()
 	})
 	win.OnWindowEvent(events.Common.WindowMinimise, func(_ *application.WindowEvent) {
@@ -689,7 +695,20 @@ func main() {
 	} else {
 		tray.OnClick(func() { api.onTrayLeftClick() })
 	}
-	tray.OnRightClick(showSettings)
+	if trayNeedsQuitMenu(runtime.GOOS) {
+		// Windows has no system-wide quit path (no ⌘Q equivalent) and the X
+		// button used to only hide the window, so the tray menu is the only
+		// place a normal user can find "quit".
+		menu := application.NewMenu()
+		menu.Add("打开猛犸智能体").OnClick(func(*application.Context) { api.showWindow() })
+		menu.Add("设置").OnClick(func(*application.Context) { showSettings() })
+		menu.AddSeparator()
+		menu.Add("退出").OnClick(func(*application.Context) { api.requestQuit() })
+		tray.SetMenu(menu)
+		tray.OnRightClick(func() { tray.OpenMenu() })
+	} else {
+		tray.OnRightClick(showSettings)
+	}
 
 	if _, err := api.setAutostart(store.get().Autostart); err != nil {
 		log.Printf("sync autostart: %v", err)

@@ -105,6 +105,7 @@ func startOctop(root string, port int) (*exec.Cmd, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	adoptProcess(cmd)
 	return cmd, nil
 }
 
