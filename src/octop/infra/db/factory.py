@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from octop.config import OctopConfig, database_env_configured
+from octop.config import OctopConfig, database_env_configured, is_desktop_shell
 from octop.infra.db.pool import DatabasePool, PostgresPool, SqlitePool
 from octop.infra.utils.paths import PathLayout
 
@@ -23,10 +23,16 @@ def should_defer_control_plane_db(config: OctopConfig, paths: PathLayout) -> boo
     Defer only for greenfield SQLite installs with no existing DB file and no
     ``OCTOP_DATABASE_*`` / PostgreSQL configuration. Password verification and
     early wizard steps then run without a pool.
+
+    Desktop never defers: the installed client has no local setup wizard, so a
+    deferred DB left ``/api/auth/oauth/status`` at 503 forever and the window
+    stuck on 「正在启动本地服务」. Let SQLite be created on first boot instead.
     """
     if config.database.is_postgresql:
         return False
     if database_env_configured():
+        return False
+    if is_desktop_shell():
         return False
     return not resolve_sqlite_db_path(config, paths).exists()
 

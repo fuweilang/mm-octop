@@ -31,6 +31,7 @@ const (
 	copyErrorMammothSHAMismatch     = "error.mammoth_sha_mismatch"
 	copyErrorBackupFailed           = "error.backup_failed"
 	copyErrorUpgradeFailed          = "error.upgrade_failed"
+	copyErrorRuntimeStale           = "error.runtime_stale"
 	copyErrorNoFreePort             = "error.no_free_port"
 	copyErrorCannotBind             = "error.cannot_bind"
 	copyErrorPortOccupied           = "error.port_occupied"

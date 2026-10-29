@@ -239,7 +239,9 @@ func (a *App) boot() {
 		}
 	} else if existing != "" {
 		runningPort, hasPort := portFromDashboardURL(existing)
-		if dashboardIsCurrent(existing, portableVersion(root)) {
+		// 用「本应运行的版本」判断，避免换包失败时把旧 runtime 当成当前版本。
+		want := desiredRuntimeVersion(root)
+		if dashboardIsCurrent(existing, want) {
 			a.setStatus(desktopText(locale, copyStatusUsingExisting))
 			if err := waitHealth(locale, existing, 30*time.Second); err != nil {
 				a.setStatus(err.Error())
@@ -264,10 +266,10 @@ func (a *App) boot() {
 		// server that started before the portable was swapped. Reusing it keeps
 		// serving already-fixed bugs under a new UI, so restart it.
 		log.Printf(
-			"desktop: stale runtime on %s (running %q, portable %q); restarting",
+			"desktop: stale runtime on %s (running %q, want %q); restarting",
 			existing,
 			dashboardVersion(existing),
-			portableVersion(root),
+			want,
 		)
 		a.setStatus(desktopText(locale, copyStatusReplacingStale))
 		if hasPort {

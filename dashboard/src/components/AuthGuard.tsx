@@ -25,6 +25,30 @@ interface AuthGuardProps {
 }
 
 /**
+ * 首次启动要跑迁移，oauth/status 会短时间 503。多等一会儿再判死，
+ * 免得新装客户端一进来就停在「正在启动本地服务」。
+ */
+const ORIGIN_RETRY_ATTEMPTS = 6;
+const ORIGIN_RETRY_DELAY_MS = 4000;
+/** 面板自动重试次数（点「重试」不受限）。 */
+const AUTO_RETRY_LIMIT = 3;
+
+/** Same as readPlatformOrigin, but tolerates the boot-time 503 for ~24s. */
+async function readPlatformOriginWithRetry(): Promise<string | null> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await readPlatformOrigin();
+    } catch (error) {
+      const initializing = error instanceof PlatformOriginInitializingError;
+      if (!initializing || attempt >= ORIGIN_RETRY_ATTEMPTS) throw error;
+      await new Promise((resolve) =>
+        setTimeout(resolve, ORIGIN_RETRY_DELAY_MS),
+      );
+    }
+  }
+}
+
+/**
  * Gate every protected route on (a) the initial admin existing and
  * (b) a valid JWT in localStorage. Octop always requires auth — there is
  * no "password protection disabled" mode like finnie had.
@@ -61,6 +85,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const [diagnostics, setDiagnostics] = useState<BootDiagnostics | null>(null);
   const [loginOrigin, setLoginOrigin] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const [autoRetries, setAutoRetries] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +101,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
 
     const openLogin = async () => {
       try {
-        const origin = await readPlatformOrigin();
+        const origin = await readPlatformOriginWithRetry();
         if (origin === null) {
           if (!cancelled) {
             await showUnreachable("oauth/status probe failed");
@@ -91,7 +116,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
       } catch (error) {
         if (cancelled) return "offline" as const;
         if (error instanceof PlatformOriginInitializingError) {
-          await showUnreachable(error.message || "local backend initializing");
+          await showUnreachable(t("errors.startingLocalTimeout"));
           return "offline" as const;
         }
         await showUnreachable(
@@ -180,7 +205,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
               return;
             }
             if (error instanceof PlatformOriginInitializingError) {
-              await showUnreachable(error.message);
+              await showUnreachable(t("errors.startingLocalTimeout"));
               return;
             }
             await showUnreachable(
@@ -201,19 +226,22 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     return () => {
       cancelled = true;
     };
-  }, [retryKey]);
+  }, [retryKey, t]);
 
   // Auto-retry while local backend is initializing (first-boot race).
+  // 只自动重试几次：内部已经等过 ~24s，无限重试会让用户永远看不到提示。
   useEffect(() => {
     if (!offline || diagnostics?.phase !== "initializing") return;
+    if (autoRetries >= AUTO_RETRY_LIMIT) return;
     const timer = window.setTimeout(() => {
+      setAutoRetries((n) => n + 1);
       setChecking(true);
       setAuthed(false);
       setOffline(false);
       setRetryKey((k) => k + 1);
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [offline, diagnostics?.phase, retryKey]);
+  }, [offline, diagnostics?.phase, retryKey, autoRetries]);
 
   if (offline) {
     return (
@@ -224,6 +252,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
           setAuthed(false);
           setOffline(false);
           setDiagnostics(null);
+          setAutoRetries(0);
           setRetryKey((k) => k + 1);
         }}
       />
@@ -244,7 +273,9 @@ export default function AuthGuard({ children }: AuthGuardProps) {
         <Result
           status="warning"
           title={t("errors.loginUnreachableTitle")}
-          subTitle={t("errors.loginUnreachableSubtitle", { origin: loginOrigin })}
+          subTitle={t("errors.loginUnreachableSubtitle", {
+            origin: loginOrigin,
+          })}
           extra={
             <Button
               type="primary"

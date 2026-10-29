@@ -6974,6 +6974,7 @@
     "backHome": "Back to Home",
     "startingLocalTitle": "Starting local service…",
     "startingLocalSubtitle": "The local backend is still initializing (this is not a network failure). Retrying automatically; you can also retry manually.",
+    "startingLocalTimeout": "The local service did not finish starting within 20 seconds. Quit the client completely (including the tray) and reopen it; if it still hangs, stop any older process holding port 8088.",
     "offlineDiagnostics": "Boot diagnostics (copyable)",
     "copyDiagnostics": "Copy",
     "exportDiagnostics": "Export log file",

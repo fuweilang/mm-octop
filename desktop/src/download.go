@@ -59,6 +59,14 @@ func ensurePortable(locale Locale, status func(string)) (replaced bool, err erro
 	}
 	if err := replacePortable(root); err != nil {
 		if launchReady(root) {
+			// 旧目录还在：同版本重解压失败可以继续用旧的，但新版本没换上
+			// 就继续跑，用户会一直看到旧版本号（Windows 文件被占用时很常见），
+			// 所以要把「仍在跑旧版本」说清楚，而不是静默继续。
+			if stale, current, want := runtimeBehindBundle(root); stale {
+				status(desktopText(locale, copyErrorRuntimeStale, current, want))
+				recordBoot("runtime_stale", fmt.Sprintf("installed %s, bundled %s", current, want), nil)
+				return false, nil
+			}
 			status(desktopText(locale, copyStatusUpdateFailedKeep))
 			return false, nil
 		}
@@ -72,6 +80,27 @@ func ensurePortable(locale Locale, status func(string)) (replaced bool, err erro
 		return false, fmt.Errorf("portable extract missing launch.py or python under %s", root)
 	}
 	return true, nil
+}
+
+// desiredRuntimeVersion is the version this shell is supposed to run: the
+// bundled one when it can be read, so a failed swap (Windows file locks) can
+// never make the older on-disk runtime look current.
+func desiredRuntimeVersion(root string) string {
+	if v, err := bundledPortableVersion(); err == nil && v != "" {
+		return v
+	}
+	return portableVersion(root)
+}
+
+// runtimeBehindBundle reports whether the portable on disk is older than the
+// runtime bundled in this shell.
+func runtimeBehindBundle(root string) (stale bool, current, want string) {
+	current = portableVersion(root)
+	want, err := bundledPortableVersion()
+	if err != nil || want == "" || current == "" {
+		return false, current, want
+	}
+	return compareVersions(want, current) > 0, current, want
 }
 
 func bundledRuntimeNeedsReplace(root string) (newer bool, sameVersionChanged bool) {
