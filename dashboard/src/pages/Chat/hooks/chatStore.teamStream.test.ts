@@ -879,4 +879,70 @@ describe("team member live stream", () => {
         ?.speakerAgentId,
     ).toBe("bridge:cid:doctor");
   });
+
+  it("starts a fresh wrap-up bubble instead of editing a finished summary", () => {
+    ingestHarnessChunk(
+      SESSION,
+      { type: "token", content: "第一轮总结", agent_id: "host", team_wrapup: true },
+      "host",
+    );
+    ingestHarnessChunk(
+      SESSION,
+      { type: "done", agent_id: "host", team_wrapup: true },
+      "host",
+    );
+    ingestHarnessChunk(
+      SESSION,
+      { type: "token", content: "第二轮最终答复", agent_id: "host", team_wrapup: true },
+      "host",
+    );
+
+    const host = getSnapshot(SESSION).messages.filter(
+      (item) => item.speakerAgentId === "host" && !item.toolData,
+    );
+    expect(host).toHaveLength(2);
+    expect(host[0]?.content).toBe("第一轮总结");
+    expect(host[0]?.status).toBe("done");
+    expect(host[1]?.content).toBe("第二轮最终答复");
+    expect(host[1]?.teamWrapup).toBe(true);
+  });
+
+  it("seals the wrap-up reasoning bubble when the team finishes", () => {
+    ingestHarnessChunk(
+      SESSION,
+      { type: "reasoning", content: "整理十节内容", agent_id: "host", team_wrapup: true },
+      "host",
+    );
+    const thinking = getSnapshot(SESSION).messages.find((item) =>
+      (item.contentBlocks ?? []).some((block) => block.type === "thinking"),
+    );
+    expect(thinking?.status).toBe("streaming");
+    expect(thinking?.teamWrapup).toBe(true);
+
+    ingestHarnessChunk(
+      SESSION,
+      { type: "done", agent_id: "host", team_wrapup: true },
+      "host",
+    );
+    const after = getSnapshot(SESSION).messages.filter(
+      (item) => item.status === "streaming",
+    );
+    expect(after).toHaveLength(0);
+  });
+
+  it("seals an unlabeled thinking bubble left by an older server", () => {
+    ingestHarnessChunk(
+      SESSION,
+      { type: "reasoning", content: "整理十节内容", agent_id: "host" },
+      "host",
+    );
+    ingestHarnessChunk(
+      SESSION,
+      { type: "done", agent_id: "host", team_wrapup: true },
+      "host",
+    );
+    expect(
+      getSnapshot(SESSION).messages.filter((item) => item.status === "streaming"),
+    ).toHaveLength(0);
+  });
 });

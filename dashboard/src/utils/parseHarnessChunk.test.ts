@@ -27,6 +27,11 @@ describe("parseHarnessChunk team speaker", () => {
       ),
     ).toMatchObject({ type: "tool_call_chunk", agent_id: "doctor" });
     expect(
+      parseHarnessChunk(
+        'data: {"type":"reasoning","content":"wrap","agent_id":"host","team_wrapup":true}',
+      ),
+    ).toMatchObject({ type: "reasoning", team_wrapup: true });
+    expect(
       parseHarnessChunk('data: {"type":"done","agent_id":"doctor"}'),
     ).toEqual({ type: "done", agent_id: "doctor", team_wrapup: false });
     expect(
