@@ -1,11 +1,13 @@
 name: Release
 
-# 版本标签 v* → 测包、发 PyPI、建 GitHub Release，再级联：
+# 版本标签 v* → 测包、建 GitHub Release，再级联：
 #   - Sync Main Into Develop
 #   - Build Octop FPK（复用本 Release 的 wheel；等待 docker-publish 的多架构 GHCR 镜像）
 #
 # 与 docker-publish.yml / octop-desktop.yml 并行（由 Auto Tag 同时 dispatch，
-# 或人工 push v* tag 同时触发）。wheel / sdist 只发 PyPI 和 GitHub Release。
+# 或人工 push v* tag 同时触发）。wheel / sdist 只挂 GitHub Release——PyPI 通道
+# 已停用：猛犸不走 pip 分发，PyPI 上的 octop 停在 1.0.2，原 publish job 每次都
+# 红在 OIDC 缺 id-token 上。
 # 桌面安装包与 FnOS FPK 挂到同一 GitHub Release 后，再上传到同一个 COS 版本目录。
 
 on:
@@ -66,26 +68,9 @@ jobs:
           name: dist
           path: dist/
 
-  publish:
-    name: Publish to PyPI
-    needs: build
-    runs-on: ubuntu-latest
-    environment: pypi
-    steps:
-      - name: Download distributions
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-      - name: Publish package
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
-
   github-release:
     name: Create GitHub Release
-    needs: publish
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
