@@ -291,6 +291,12 @@ func (a *App) boot() {
 			logLeftoverInstance()
 			keepAlternate = false
 		}
+		// Nothing is serving these files, so a prefetched SPA bundle can be
+		// swapped in now without interrupting anyone: it was downloaded during
+		// the previous session precisely to be applied here.
+		if applied := applyPendingDashboardUpdate(root); applied {
+			recordBoot("dashboard_prefetched", "", nil)
+		}
 	}
 	a.mu.Lock()
 	allowAlternate := a.alternatePort
@@ -363,6 +369,12 @@ func (a *App) boot() {
 	recordBoot("ready", "", nil)
 	go uploadBootLog(base)
 	a.showDashboard(base)
+	// Runs after the window is up: an 8 MB download must not delay startup, and
+	// the staged bundle is only applied at the next launch anyway.
+	go func() {
+		time.Sleep(20 * time.Second)
+		a.prefetchMammothDashboardUpdate(locale)
+	}()
 }
 
 // candidatePorts lists the ports an instance of ours may already be on: the
