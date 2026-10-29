@@ -478,7 +478,6 @@ async def test_boot_loads_users(tmp_path: Path):
         await manager.shutdown_all()
 
 
-
 async def test_sso_applies_ground_permissions_without_admin(manager: UserManager, caplog):
     """Ground permissions keys apply; enterprise OWNER must not become local admin."""
     import logging
@@ -505,9 +504,7 @@ async def test_sso_applies_ground_permissions_without_admin(manager: UserManager
     assert row.permissions == ["experts", "providers"]
 
 
-async def test_sso_missing_permissions_falls_back_local_with_log(
-    manager: UserManager, caplog
-):
+async def test_sso_missing_permissions_falls_back_local_with_log(manager: UserManager, caplog):
     import logging
 
     provider_id = _insert_sso_provider(manager)

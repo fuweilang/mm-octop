@@ -46,9 +46,7 @@ def install(app: Any) -> None:
     # 不显式挂 handler 时 logger.info 会被静默丢掉。
     if not logger.handlers:
         handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
         logger.addHandler(handler)
         logger.propagate = False
     logger.setLevel(logging.INFO)
@@ -82,16 +80,9 @@ def install(app: Any) -> None:
                 ip_display = forwarded.split(",")[0].strip() or client_ip
 
             line = (
-                "access method=%s path=%s status=%s duration_ms=%.1f "
-                "ip=%s user=%s"
-                % (
-                    request.method,
-                    path,
-                    status,
-                    duration_ms,
-                    ip_display,
-                    _user_label(request),
-                )
+                f"access method={request.method} path={path} status={status} "
+                f"duration_ms={duration_ms:.1f} ip={ip_display} "
+                f"user={_user_label(request)}"
             )
             highlight = path.startswith(_HIGHLIGHT_PREFIXES) or status >= 400
             if highlight and status >= 500:

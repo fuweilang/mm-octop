@@ -51,7 +51,9 @@ def _is_trusted_proxy(address: str) -> bool:
         ip = ipaddress.ip_address(address)
     except ValueError:
         return False
-    return any(ip in network for network in _TRUSTED_PROXY_NETWORKS if network.version == ip.version)
+    return any(
+        ip in network for network in _TRUSTED_PROXY_NETWORKS if network.version == ip.version
+    )
 
 
 def _forwarded_for_rightmost(request: Any) -> str:
