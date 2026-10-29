@@ -26,7 +26,12 @@ describe("401 handling", () => {
     replace.mockClear();
     Object.defineProperty(window, "location", {
       configurable: true,
-      value: { pathname: "/chat", replace },
+      value: {
+        pathname: "/chat",
+        origin: "http://localhost:3000",
+        replace,
+        assign: vi.fn(),
+      },
     });
     vi.stubGlobal(
       "fetch",
@@ -52,7 +57,12 @@ describe("401 handling", () => {
   it("falls back to a full-page navigation when nothing handles the event", async () => {
     await expect(mod.request("/agents")).rejects.toThrow();
 
-    expect(replace).toHaveBeenCalledWith("/login");
+    // Nothing listens for UNAUTHORIZED_EVENT here, so the interceptor starts
+    // the unified-login round-trip itself: /login?next=<current page>.
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
+    const target = new URL(replace.mock.calls[0][0] as string);
+    expect(target.pathname).toBe("/login");
+    expect(target.searchParams.get("next")).toContain("/chat");
   });
 
   it("keeps the local session when a 401 is a peer credential error", async () => {

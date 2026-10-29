@@ -25,6 +25,13 @@ import { authApi } from "../api/modules/auth";
 import { getAuthToken } from "../api/request";
 import { resetPlatformOriginCache } from "../utils/mammothSso";
 
+/**
+ * The boot gate awaits setup/status, oauth probe, and /auth/me before it can
+ * mount anything. Under a full parallel run that easily outruns the 1s
+ * Testing Library default, so give these assertions real headroom.
+ */
+const FIND_TIMEOUT = { timeout: 5000 };
+
 describe("AuthGuard offline boot", () => {
   beforeEach(() => {
     vi.mocked(authApi.getAuthStatus).mockReset();
@@ -78,7 +85,9 @@ describe("AuthGuard offline boot", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("desktop-login")).toBeInTheDocument();
+    expect(
+      await screen.findByText("desktop-login", {}, FIND_TIMEOUT),
+    ).toBeInTheDocument();
     expect(screen.queryByText("setup-wizard")).not.toBeInTheDocument();
     vi.unstubAllGlobals();
     resetPlatformOriginCache();
@@ -97,7 +106,7 @@ describe("AuthGuard offline boot", () => {
       </MemoryRouter>,
     );
 
-    const alert = await screen.findByRole("alert");
+    const alert = await screen.findByRole("alert", {}, FIND_TIMEOUT);
     expect(alert).toBeInTheDocument();
     expect(alert.textContent).toMatch(
       /errors\.offlineTitle|Cannot reach|无法连接/,
@@ -140,7 +149,9 @@ describe("AuthGuard offline boot", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("protected-shell")).toBeInTheDocument();
+    expect(
+      await screen.findByText("protected-shell", {}, FIND_TIMEOUT),
+    ).toBeInTheDocument();
     await waitFor(() => {
       expect(authApi.getAuthStatus).toHaveBeenCalledTimes(1);
     });
@@ -176,10 +187,14 @@ describe("AuthGuard offline boot", () => {
       </MemoryRouter>,
     );
 
-    const retry = await screen.findByRole("button", {
-      name: /errors\.retry|Retry|重试/,
-    });
+    const retry = await screen.findByRole(
+      "button",
+      { name: /errors\.retry|Retry|重试/ },
+      FIND_TIMEOUT,
+    );
     await user.click(retry);
-    expect(await screen.findByText("protected-shell")).toBeInTheDocument();
+    expect(
+      await screen.findByText("protected-shell", {}, FIND_TIMEOUT),
+    ).toBeInTheDocument();
   });
 });

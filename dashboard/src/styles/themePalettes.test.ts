@@ -36,12 +36,12 @@ describe("theme palettes", () => {
     ]);
   });
 
-  it("keeps the historic Elegant Rose default brand tokens", () => {
-    expect(ANTD_BRAND_TOKENS.rose.light.colorPrimary).toBe("#E85D75");
-    expect(ANTD_BRAND_TOKENS.rose.light.colorPrimaryHover).toBe("#D14A62");
-    expect(ANTD_BRAND_TOKENS.rose.light.colorPrimaryActive).toBe("#B83A50");
-    expect(ANTD_BRAND_TOKENS.rose.dark.colorPrimary).toBe("#F08B9A");
-    expect(ANTD_BRAND_TOKENS.rose.dark.colorLink).toBe("#F08B9A");
+  it("keeps the default Mammoth blue brand tokens", () => {
+    expect(ANTD_BRAND_TOKENS.rose.light.colorPrimary).toBe("#2563EB");
+    expect(ANTD_BRAND_TOKENS.rose.light.colorPrimaryHover).toBe("#1D4ED8");
+    expect(ANTD_BRAND_TOKENS.rose.light.colorPrimaryActive).toBe("#1E40AF");
+    expect(ANTD_BRAND_TOKENS.rose.dark.colorPrimary).toBe("#5B8DEF");
+    expect(ANTD_BRAND_TOKENS.rose.dark.colorLink).toBe("#5B8DEF");
   });
 
   it.each(VALID_PALETTES.filter((palette) => palette !== "rose"))(

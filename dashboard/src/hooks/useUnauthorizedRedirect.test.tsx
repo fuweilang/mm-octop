@@ -59,6 +59,12 @@ describe("useUnauthorizedRedirect", () => {
       authorization_url: "https://idp.test/authorize?x=1",
     });
     const stub = stubLocationReplace();
+    // The IdP lives on the 中台 origin, so the session starter probes it first
+    // (a dead IdP would paint a blank webview). Answer the probe.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("", { status: 200 })),
+    );
     try {
       renderHarness();
 
@@ -73,6 +79,7 @@ describe("useUnauthorizedRedirect", () => {
       expect(startOauth).toHaveBeenCalledWith("oidc", "/chat");
     } finally {
       stub.restore();
+      vi.unstubAllGlobals();
     }
   });
 
@@ -89,7 +96,9 @@ describe("useUnauthorizedRedirect", () => {
       const target = new URL(stub.replace.mock.calls[0][0] as string);
       expect(target.pathname).toBe("/login");
       // The return URL keeps the user inside the agent after the round-trip.
-      expect(target.searchParams.get("next")).toBe(`${origin}/agent/chat`);
+      // It follows the deployed base path: "/" in dev, "/agent/" in prod.
+      const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+      expect(target.searchParams.get("next")).toBe(`${origin}${base}/chat`);
     } finally {
       stub.restore();
     }
