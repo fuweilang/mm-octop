@@ -31,6 +31,8 @@ export interface ReasoningChunk {
   content: string;
   /** Team-room speaker when this reasoning was fanned in from another agent. */
   agent_id?: string;
+  /** Host wrap-up reasoning — its bubble is sealed by ``done.team_wrapup``. */
+  team_wrapup?: boolean;
 }
 
 export interface ToolCallChunk {
@@ -199,6 +201,7 @@ export function parseHarnessChunk(line: string): HarnessChunk | null {
         type: "reasoning",
         content: typeof obj.content === "string" ? obj.content : "",
         agent_id: agentId,
+        ...(obj.team_wrapup === true ? { team_wrapup: true as const } : {}),
       };
     case "usage":
       return {

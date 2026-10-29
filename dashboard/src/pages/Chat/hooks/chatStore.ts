@@ -1275,7 +1275,12 @@ function handleHarnessChunk(
     }
     case "reasoning":
       markSpeakerLive(state, speaker);
-      appendStreamingReasoning(state, chunk.content, speaker);
+      appendStreamingReasoning(
+        state,
+        chunk.content,
+        speaker,
+        Boolean(chunk.team_wrapup),
+      );
       break;
     case "usage":
       applyUsageChunk(state, chunk);
@@ -1551,6 +1556,10 @@ function findWrapupTextToContinue(
     if (message.role === "user") break;
     if (message.role !== "assistant" || message.toolData) continue;
     if (!message.teamWrapup) continue;
+    // Only an *open* wrap-up may be continued. A finished summary from an
+    // earlier round also carries teamWrapup; appending this round's final text
+    // to it made the new answer invisible (it landed inside the old summary).
+    if (message.status !== "streaming") continue;
     if (!sameStreamingSpeaker(message.speakerAgentId, speaker, hostId, true))
       continue;
     return i;
@@ -1830,6 +1839,7 @@ function appendStreamingReasoning(
   state: SessionStreamState,
   content: string,
   speakerAgentId?: string,
+  wrapup = false,
 ): void {
   if (!content) return;
   const speaker = speakerAgentId?.trim() || undefined;
@@ -1874,6 +1884,9 @@ function appendStreamingReasoning(
       status: "streaming",
       timestamp: Date.now(),
       speakerAgentId: speaker,
+      // Keep the host's wrap-up marker so ``done.team_wrapup`` can seal this
+      // bubble; dropping it left an empty "thinking" message spinning forever.
+      ...(wrapup ? { teamWrapup: true } : {}),
     },
   ];
 }
@@ -2235,7 +2248,7 @@ function finalizeWrapupMessages(
 ): void {
   const hostId = sessionHostAgentId(state);
   state.messages = state.messages.map((m) => {
-    if (m.status !== "streaming" || !m.teamWrapup) return m;
+    if (m.status !== "streaming" || m.toolData) return m;
     if (
       !sameStreamingSpeaker(
         m.speakerAgentId,
@@ -2245,6 +2258,10 @@ function finalizeWrapupMessages(
       )
     )
       return m;
+    // Wrap-up text bubble, or the empty thinking bubble the wrap-up reasoning
+    // opened (older servers do not flag that reasoning with team_wrapup).
+    // Without the second case the bubble stays "thinking" for good.
+    if (!m.teamWrapup && (m.content ?? "").trim() !== "") return m;
     return { ...m, status: "done" as const };
   });
 }
